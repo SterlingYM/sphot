@@ -51,8 +51,7 @@ if __name__ == '__main__':
         fitter_2.fit(fit_to='psf_sub_data',method='iterative_NM',max_iter=10)
         fitter_psf.fit(fit_to='sersic_residual',plot=False)
         
-    # 7. plot the results
-    plot_sphot_results(cutoutdata)
+    # 7. save the result (temporary)
     galaxy.save(f'{galaxy.name}_sphot.h5')
 
     ######## fit each filter ########
@@ -83,7 +82,6 @@ if __name__ == '__main__':
         for _ in range(N_mainloop_iter):
             _fitter_2.fit(fit_to='psf_sub_data')
             _fitter_psf.fit(fit_to='sersic_residual',plot=False)
-        plot_sphot_results(_cutoutdata)
         
     # update the galaxy save data
     galaxy.save(f'{galaxy.name}_sphot.h5')
