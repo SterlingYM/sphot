@@ -153,7 +153,7 @@ class ModelFitter():
 
     def calc_chi2(self,
                   standardized_params,
-                  iterinfo='',print_val=True,chi2_min_allowed=1e-10):
+                  iterinfo='',print_val=False,chi2_min_allowed=1e-10):
         # parameter sanity check
         condition_func = getattr(self.model,'condition_func',False)
         if condition_func:
@@ -370,7 +370,7 @@ def iterative_NM(func,args,x0,bounds,
     chi2_vals.append(result.fun)
 
     # run minimization multiple times
-    for i in range(max_iter):
+    for i in tqdm(range(max_iter)):
         x0 = result.x
         xatol = xrtol* max(np.abs(x0))
         fatol = rtol_iter * func(x0,*args)
