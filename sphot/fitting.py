@@ -231,7 +231,7 @@ class ModelFitter():
 class ModelScaleFitter(ModelFitter):
     def __init__(self,model,cutoutdata,base_params=None,
                  **kwargs):
-        if 'base_params' is None:
+        if base_params is None:
             raise ValueWarning('ModelScaleFitter requires the base parameter to be initialized.')
         super().__init__(model,cutoutdata,**kwargs)
         self.base_params = base_params
