@@ -26,7 +26,6 @@ from photutils.aperture import (CircularAperture,EllipticalAperture,
 
 from .plotting import astroplot, plot_sersicfit_result
 
-
 class SphotModel(PSFConvolvedModel2D):
     def __init__(self,model,cutoutdata):
         ''' A wrapper class for the petrofit model.
@@ -36,8 +35,8 @@ class SphotModel(PSFConvolvedModel2D):
         '''
         super().__init__(model,
                         psf=cutoutdata.psf, 
-                        psf_oversample = cutoutdata.psf_oversample,
-                        oversample = cutoutdata.psf_oversample)
+                        psf_oversample = int(cutoutdata.psf_oversample),
+                        oversample = int(cutoutdata.psf_oversample))
         self.data = cutoutdata.data
         self.free_params = self._param_names
         self.fixed_params = {}
@@ -60,7 +59,7 @@ class SphotModel(PSFConvolvedModel2D):
         return parsed_params
     
     def list_to_params(self,theta):
-        ''' convert a list of parameters to a dictionary '''
+        ''' convert a list of free parameters to the full model parameter array '''
         return self.parse_params(theta)
 
     def set_fixed_params(self,fixed_params):
@@ -434,12 +433,14 @@ def make_aperture(bestfit_params_physical,a,multi_sersic_index=0):
 def profile_stats(cutoutdata,fit_to='psf_sub_data',
                   sersic_params = None,
                   max_size_relative=6,
-                  interval_relative=0.1,plot=True):
+                  interval_relative=0.1,plot=True,
+                  radius_param_name='r_eff_0',
+                  multi_sersic_index=0):
     if sersic_params is None:
         sersic_params = cutoutdata.sersic_params_physical
         
     if 'r_eff' not in sersic_params.keys():
-        r_eff = sersic_params['r_eff_0']
+        r_eff = sersic_params[radius_param_name]
     else:
         r_eff = sersic_params['r_eff']
     data = getattr(cutoutdata,fit_to)
@@ -449,6 +450,9 @@ def profile_stats(cutoutdata,fit_to='psf_sub_data',
     a_vals = np.arange(1,r_eff*max_size_relative,interval_relative*r_eff)
     data_filled = data.copy()
     error_filled = getattr(cutoutdata,fit_to+'_error',None)
+    if error_filled is None:
+        print(fit_to+'_error not available: using psf_sub_data_error')
+        error_filled = getattr(cutoutdata,'psf_sub_data_error',None)
     if error_filled is not None:
         error_filled = error_filled.copy()
     a_centers = []
@@ -457,7 +461,8 @@ def profile_stats(cutoutdata,fit_to='psf_sub_data',
     counts_sum = []
     
     # innermost aperture
-    aperture = make_aperture(sersic_params,a_vals[0])
+    aperture = make_aperture(sersic_params,a_vals[0],
+                             multi_sersic_index=multi_sersic_index)
     aper_stats = ApertureStats(data,aperture,sigma_clip=None)
     a_centers.append(a_vals[0]/2)
     counts_std.append(aper_stats.std)
@@ -469,7 +474,8 @@ def profile_stats(cutoutdata,fit_to='psf_sub_data',
         # do aperture statistics
         a_in,a_out = a_vals[i],a_vals[i+1]
         a_centers.append((a_in+a_out)/2)
-        annulus = make_annulus(sersic_params,a_in,a_out)
+        annulus = make_annulus(sersic_params,a_in,a_out,
+                               multi_sersic_index=multi_sersic_index)
         aper_stats = ApertureStats(data,annulus,sigma_clip=None)
         counts_std.append(aper_stats.std)
         counts_mean.append(aper_stats.mean)
@@ -499,18 +505,21 @@ def profile_stats(cutoutdata,fit_to='psf_sub_data',
 def do_aperture_photometry(stats,
                            aperture_size=2,
                            annulus_size = [3,6],
-                           plot=True):
+                           plot=True,
+                           multi_sersic_index=0):
     ''' perform aperture photometry '''
 
     # run photometry
     annulus = make_annulus(stats.sersic_params,
                            annulus_size[0]*stats.r_eff,
-                           annulus_size[1]*stats.r_eff)
+                           annulus_size[1]*stats.r_eff,
+                           multi_sersic_index=multi_sersic_index)
     annulus_stats = ApertureStats(stats.data_filled,annulus,sigma_clip=None)
     annulus_mean,annulus_std = annulus_stats.mean, annulus_stats.std
     
     aperture = make_aperture(stats.sersic_params,
-                             aperture_size*stats.r_eff)
+                             aperture_size*stats.r_eff,
+                             multi_sersic_index=multi_sersic_index)
     phot = aperture_photometry(stats.data_filled-annulus_mean,
                                aperture,error=stats.error_filled)
     counts,counts_error = phot['aperture_sum'][0], phot['aperture_sum_err'][0]

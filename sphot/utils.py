@@ -13,7 +13,7 @@ from .data import (CutoutData, MultiBandCutout,
                         load_h5data, get_data_annulus)
 
 def load_and_crop(datafile,filters,folder_PSF,
-                  base_filter,plot=True):
+                  base_filter,plot=True,custom_initial_crop=False,**kwargs):
     # load PSFs
     psfs_data = []
     for filtername in filters:
@@ -26,11 +26,19 @@ def load_and_crop(datafile,filters,folder_PSF,
     galaxy = load_h5data(datafile, galaxy_ID, filters, PSFs_dict)
     if plot:
         galaxy.plot()
+        
+    # custom crop-in (run this if galaxy seems too small)
+    if custom_initial_crop:
+        shape = galaxy.images[base_filter].data.shape
+        x0, y0 = shape[1]/2, shape[0]/2
+        cutout_size = shape[0] * custom_initial_crop
+        galaxy.crop_in(x0, y0, cutout_size)
 
     # estimate size of the galaxy
     cutoutdata = galaxy.images[base_filter]
-    cutoutdata.init_size_guess(sigma_guess=10, center_slack = 0.20,
-                                plot=plot, sigma_kernel=5)
+    size_guess_kwargs = dict(plot=plot, sigma_guess=10, center_slack = 0.20, sigma_kernel=5)
+    size_guess_kwargs.update(kwargs)
+    cutoutdata.init_size_guess(**size_guess_kwargs)
 
     # determine cutout size based on the initial fit
     galaxy_size = cutoutdata.size_guess
@@ -46,7 +54,7 @@ def load_and_crop(datafile,filters,folder_PSF,
     return galaxy
 
 
-def prep_model(cutoutdata,simple=False):
+def prep_model(cutoutdata,simple=False,fixed_params={}):
     # prepare model
     galaxy_size = cutoutdata.galaxy_size
     shape = cutoutdata.data.shape
@@ -64,5 +72,5 @@ def prep_model(cutoutdata,simple=False):
                                 ellip=0.2, theta=np.pi/4)
         model = SphotModel(disk+bulge, cutoutdata) # some model constraints depend on the data
         model.set_conditions([('r_eff_0','r_eff_1')]) # enforce r_eff_0 >= r_eff_1
-    model.set_fixed_params({})
+    model.set_fixed_params(fixed_params)
     return model

@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from .plotting import astroplot
 from tqdm.auto import tqdm
+import warnings
 
 from scipy.ndimage import gaussian_filter
 from astropy.nddata import overlap_slices
@@ -46,11 +47,13 @@ class PSFFitter():
     def fit(self,fit_to='sersic_residual',**kwargs):
         self.data = getattr(self.cutoutdata,fit_to)
         
-        psf_table, resid = iterative_psf_fitting(self.data,self.cutoutdata.psf,
-                                                psf_sigma = self.psf_sigma,
-                                                psf_oversample = self.cutoutdata.psf_oversample,
-                                                threshold_list = np.arange(1.6,3.2,0.2)[::-1],
-                                                **kwargs)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            psf_table, resid = iterative_psf_fitting(self.data,self.cutoutdata.psf,
+                                                    psf_sigma = self.psf_sigma,
+                                                    psf_oversample = self.cutoutdata.psf_oversample,
+                                                    threshold_list = np.arange(1.6,3.2,0.2)[::-1],
+                                                    **kwargs)
         psf_model_total = self.data - resid
 
         # generate PSF-subtracted data

@@ -28,6 +28,11 @@ from petrofit.modeling import PSFConvolvedModel2D, model_to_image
 
 from .plotting import astroplot, plot_sersicfit_result
 
+class DebugException(Exception):
+    def __init__(self, message, debug_var):
+        super().__init__(message)
+        self.debug_var = debug_var
+        
 
 def calc_mag(counts_Mjy_per_Sr,errors_Mjy_per_Sr=None,pixel_scale=0.03):
     PIXAR_SR = ((pixel_scale*u.arcsec)**2).to(u.sr).value
@@ -130,7 +135,7 @@ class CutoutData():
         
     def init_size_guess(self,sigma_guess=10,center_slack = 0.20,
                         plot=False,sigma_kernel=5,
-                        clip_lower_counts_percentile=10):
+                        clip_lower_counts_percentile=10,**kwargs):
         '''roughly estimate the effective radius using Gaussian profile.
         Args:
             sigma_guess (float): initial guess for the standard deviation of the Gaussian profile (in pixels)
@@ -166,12 +171,26 @@ class CutoutData():
             lower_clip = np.nanpercentile(means_smooth,
                                           clip_lower_counts_percentile)
             s2 = means_smooth > lower_clip
+            s2 = s2 & np.isfinite(means_smooth)
             
-            x0_guess = axis_pixels[np.argmax(means_smooth)]
-            popt,_ = curve_fit(gaussian,axis_pixels[s2],
-                               means_smooth[s2],
-                            p0=[x0_guess,sigma_guess,means_smooth.max(),0],
-                            bounds=bounds)
+            x0_guess = axis_pixels.max()/2
+            p0 = [x0_guess,sigma_guess, # center, sigma,
+                  means_smooth[s2].max()-means_smooth[s2].min(), # amplitude
+                  means_smooth[s2].min()] # offset
+            sigma = abs(x0_guess-axis_pixels)+1
+            try:
+                popt,_ = curve_fit(gaussian,axis_pixels[s2],
+                                   means_smooth[s2],
+                                   p0=p0, bounds=bounds,
+                                   sigma=sigma[s2])
+            except Exception as e:
+                axes[i].plot(axis_pixels,means_smooth,c='k',lw=4)
+                axes[i].plot(axis_pixels[s2],means_smooth[s2],c='r',ls=':')
+                axes[i].plot(axis_pixels[s2],gaussian(axis_pixels[s2],*p0),c='orange',lw=3,alpha=0.5)
+                print('p0=',p0)
+                debug_var = [means_smooth[s2],sigma[s2],gaussian(axis_pixels[s2],*p0)]
+                exception_msg = "An exception occurred. You can capture this error and look into e.debug_var, which contain [smooth_profile1d,sigma_profile1d,init_guess_1d]."
+                raise DebugException(exception_msg, debug_var) from e
             centers.append(popt[0])
             sigmas.append(popt[1])
             
