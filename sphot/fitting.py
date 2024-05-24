@@ -247,7 +247,7 @@ class ModelScaleFitter(ModelFitter):
         return scaled_params
 
     def calc_chi2(self,flux_scale,
-                  iterinfo='',print_val=True,chi2_min_allowed=1e-10):
+                  iterinfo='',print_val=False,chi2_min_allowed=1e-10):
         
         scaled_modelparams = self.scale_params(flux_scale)  
         
