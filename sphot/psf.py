@@ -128,7 +128,10 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
                                     localbkg_estimator=localbkg_estimator,
                                     aperture_radius=3,
                                     maxiters=5,fitter_maxiters=300)
-    phot_result = psf_iter(data_bksub, error=error)
+    try:
+        phot_result = psf_iter(data_bksub, error=error)
+    except Exception:
+        phot_result = None
     if phot_result is None:
         return None,None,None,None
     
