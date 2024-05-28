@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import pandas as pd
 import logging
+import io
+from rich.progress import Progress
 from tqdm.auto import tqdm
 import h5py
 
@@ -25,7 +27,7 @@ from photutils.aperture import (CircularAperture,EllipticalAperture,
                                 ApertureStats)
 
 from .plotting import astroplot, plot_sersicfit_result
-
+        
 class SphotModel(PSFConvolvedModel2D):
     def __init__(self,model,cutoutdata):
         ''' A wrapper class for the petrofit model.
@@ -341,9 +343,11 @@ def triple_annealing(func,args=(),x0=None,bounds=None,max_iter=2,**kwargs):
     return result,success
 
 def iterative_NM(func,args,x0,bounds,
-           rtol_init=1e-3,rtol_iter=1e-4,
-           rtol_convergence=1e-6,xrtol=1,max_iter=20,
-           maxfev_eachiter=100):
+                rtol_init=1e-3,rtol_iter=1e-4,
+                rtol_convergence=1e-6,xrtol=1,max_iter=20,
+                maxfev_eachiter=100,
+                progress=None,
+                progress_text='Running iNM...',**kwargs):
     ''' Iterative Nelder-Mead minimization.
     The original implementation by Scipy tends to miss the global minimum.
     Rather than setting the tolerance to be small, the success rate tends to be higher
@@ -369,7 +373,9 @@ def iterative_NM(func,args,x0,bounds,
     chi2_vals.append(result.fun)
 
     # run minimization multiple times
-    for i in tqdm(range(max_iter)):
+    if progress is not None:
+        progress_task = progress.add_task(progress_text, total=max_iter)
+    for i in range(max_iter):
         x0 = result.x
         xatol = xrtol* max(np.abs(x0))
         fatol = rtol_iter * func(x0,*args)
@@ -378,13 +384,16 @@ def iterative_NM(func,args,x0,bounds,
                         args = (*args,f'(iter={i+1}: fatol={fatol:.2e})'),
                         options = dict(maxfev=maxfev_eachiter,fatol=fatol,xatol=xatol))
         chi2_vals.append(result.fun)
-        
+        if progress is not None:
+            progress.update(progress_task, advance=1, refresh=True)
+
         if np.allclose(chi2_vals[-2:],chi2_vals[-1],rtol=rtol_convergence):
             if np.isfinite(chi2_vals[-1]):
                 convergence = True
-                print('\nIterative Nelder-Mead method Converged')
+                # print('\nIterative Nelder-Mead method Converged')
                 break
-    
+    if progress is not None:
+        progress.remove_task(progress_task)
     return result, convergence
 
 def save_bestfit_params(cutoutdata,bestfit_sersic_params_physical,):
@@ -481,14 +490,26 @@ def profile_stats(cutoutdata,fit_to='psf_sub_data',
         counts_mean.append(aper_stats.mean)
         counts_sum.append(aper_stats.sum)
         
-        # replace NaNs with mean counts
+        # replace NaNs with mean counts if it's just a few pixels
         mask = annulus.to_mask(method='center')
         mask_img = mask.to_image(shape).astype(bool)
         s = mask_img & np.isnan(data_filled)
-        data_filled[s] = aper_stats.mean
+        if s.sum() <= 0.2 * mask_img.sum():
+            data_filled[s] = aper_stats.mean
+        else:
+            data_filled[s] = cutoutdata.sersic_modelimg[s]
         if error_filled is not None:
-            error_filled[s] = np.maximum(aper_stats.std,error_filled[s])
-        
+            error_filled[s] = np.maximum(aper_stats.std,error_filled[s])      
+            
+    # replace any NaN values within 1-reff with Sersic modelimg
+    aperture = make_aperture(sersic_params,r_eff,
+                            multi_sersic_index=multi_sersic_index)
+    mask = aperture.to_mask(method='center')
+    mask_img = mask.to_image(shape).astype(bool)
+    s = mask_img & np.isnan(data_filled)
+    if s.sum() > 0:
+        data_filled[s] = cutoutdata.sersic_modelimg[s]
+              
     stats = ProfileStats()
     stats.sersic_params = sersic_params
     stats.r_eff = r_eff
@@ -506,7 +527,8 @@ def do_aperture_photometry(stats,
                            aperture_size=2,
                            annulus_size = [3,6],
                            plot=True,
-                           multi_sersic_index=0):
+                           multi_sersic_index=0,
+                           ax=None):
     ''' perform aperture photometry '''
 
     # run photometry
@@ -525,11 +547,15 @@ def do_aperture_photometry(stats,
     counts,counts_error = phot['aperture_sum'][0], phot['aperture_sum_err'][0]
         
     if plot:
-        fig,ax = plt.subplots(1,1,figsize=(5,5))
+        no_ax = False
+        if ax is None:
+            no_ax = True
+            fig,ax = plt.subplots(1,1,figsize=(5,5))
         astroplot(stats.data_filled,ax=ax)
         aperture.plot(ax=ax,color='magenta')
         annulus.plot(ax=ax,color='lawngreen')
-        plt.show()
+        if no_ax:
+            plt.show()
     return counts,counts_error,annulus_mean
 
 

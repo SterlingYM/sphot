@@ -79,7 +79,8 @@ class PSFFitter():
 def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
                       th=2,Niter=3,fit_shape=(3,3),render_shape=(25,25),
                       max_relative_error_flux=0.2,
-                      plot=True):
+                      plot=True,
+                      **kwargs):
     """ Performs PSF photometry.
     Args:
         data (2d array): the data to perform PSF photometry.
@@ -205,28 +206,42 @@ def sigma_clip_outside_aperture(data,r_eff,clip_sigma=4,
     mask[aperture_mask_img] = False
     return mask # bad pixels are True
 
-def iterative_psf_fitting(data,psfimg,psf_sigma,psf_oversample,threshold_list,**kwargs):
-    psf_results = do_psf_photometry(data, psfimg,
-                                    psf_sigma= psf_sigma,
-                                    psf_oversample=psf_oversample,
-                                    th=threshold_list[0],
-                                    **kwargs)
-    phot_result, data_bksub, psfmodel_img, resid = psf_results
-    if resid is None:
-        resid = data
-    # repeat PSF subtraction
-    for th in tqdm(threshold_list):
-        psf_results = do_psf_photometry(resid, psfimg,
+def iterative_psf_fitting(data,psfimg,psf_sigma,psf_oversample,
+                          threshold_list,
+                          progress=None,
+                          progress_text='Running iPSF...',
+                        #   ignore_warnings=True,
+                          **kwargs):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        psf_results = do_psf_photometry(data, psfimg,
                                         psf_sigma= psf_sigma,
                                         psf_oversample=psf_oversample,
-                                        th=th,**kwargs)
-        if psf_results[0] is not None:
-            _phot_result, _, _, resid = psf_results
-            if phot_result is not None:
-                phot_result = vstack([phot_result, _phot_result])
+                                        th=threshold_list[0],
+                                        **kwargs)
+        phot_result, data_bksub, psfmodel_img, resid = psf_results
+        if resid is None:
+            resid = data
+        # repeat PSF subtraction
+        if progress is not None:
+            progress_psf = progress.add_task(progress_text, 
+                                            total=len(threshold_list))
+        for th in threshold_list:
+            psf_results = do_psf_photometry(resid, psfimg,
+                                            psf_sigma= psf_sigma,
+                                            psf_oversample=psf_oversample,
+                                            th=th,**kwargs)
+            if progress is not None:
+                progress.update(progress_psf, advance=1, refresh=True)
+            if psf_results[0] is not None:
+                _phot_result, _, _, resid = psf_results
+                if phot_result is not None:
+                    phot_result = vstack([phot_result, _phot_result])
+                else:
+                    phot_result = _phot_result
             else:
-                phot_result = _phot_result
-        else:
-            continue
+                continue
+    if progress is not None:
+        progress.remove_task(progress_psf)
     return phot_result, resid
         

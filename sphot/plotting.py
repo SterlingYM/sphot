@@ -143,8 +143,9 @@ def plot_profile2d(data,ax,fig,lower_limit_percentile=20,left=False,**kwargs):
             continue
         val = norm(row+offset)
         val_norm = np.clip(np.nanmax(val),0,None)
+        alpha = np.clip(0.3*(val_norm-lower_limit)/(upper_limit-lower_limit),0,1)
         ax_top.plot(val,c='k',
-                    alpha=0.3*(val_norm-lower_limit)/(upper_limit-lower_limit),
+                    alpha=alpha,
                     zorder=val_norm)
     ax_top.set_xlim(0,data.shape[0])
     ax_top.set_ylim(lower_limit,upper_limit)
@@ -155,8 +156,9 @@ def plot_profile2d(data,ax,fig,lower_limit_percentile=20,left=False,**kwargs):
     for row in data.T:
         val = norm(row+offset)
         val_norm = np.clip(np.nanmax(val),0,None)
+        alpha = np.clip(0.3*(val_norm-lower_limit)/(upper_limit-lower_limit),0,1)
         ax_side.plot(val,np.arange(len(row)),c='k',
-                      alpha=0.3*(val_norm-lower_limit)/(upper_limit-lower_limit),
+                      alpha=alpha,
                       zorder=val_norm)
     ax_side.set_ylim(0,data.shape[0])
     ax_side.set_xlim(lower_limit,upper_limit)
