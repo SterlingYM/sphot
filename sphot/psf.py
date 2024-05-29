@@ -47,6 +47,12 @@ class PSFFitter():
     def fit(self,fit_to='sersic_residual',**kwargs):
         self.data = getattr(self.cutoutdata,fit_to)
         
+        # remove sky gradient if applicable
+        sky_model = 0
+        if hasattr(self.cutoutdata,'sky_model'):
+            sky_model = getattr(self.cutoutdata,'sky_model')
+            self.data -= sky_model
+            
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             psf_table, resid = iterative_psf_fitting(self.data,self.cutoutdata.psf,
@@ -63,13 +69,14 @@ class PSFFitter():
         psf_subtracted_data[mask] = np.nan
 
         # subtract background (to be consistent)
-        data_annulus = get_data_annulus(psf_subtracted_data,4*self.cutoutdata.galaxy_size,plot=False)
+        data_annulus = get_data_annulus(psf_subtracted_data,5*self.cutoutdata.galaxy_size,plot=False)
         bkg_mean = np.nanmean(data_annulus)
         bkg_std = np.nanstd(data_annulus)
-        psf_subtracted_data_bksub = psf_subtracted_data - bkg_mean
+        psf_subtracted_data_bksub = psf_subtracted_data - bkg_mean - sky_model
         psf_subtracted_data_bksub_error = np.ones_like(psf_subtracted_data)*bkg_std
         
         # save data
+        self.cutoutdata.residual = self.data - psf_model_total
         self.cutoutdata.psf_modelimg = psf_model_total
         self.cutoutdata.psf_sub_data = psf_subtracted_data_bksub
         self.cutoutdata.psf_sub_data_error = psf_subtracted_data_bksub_error

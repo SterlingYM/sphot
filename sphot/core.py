@@ -10,14 +10,14 @@ from rich.progress import Progress
 
 import matplotlib.pyplot as plt
 
-def FilterWarningsDecorator(func):
+def ignorewarnings(func):
     def wrapper(*args,**kwargs):
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
             return func(*args,**kwargs)
     return wrapper
             
-def ProgressDecorator(func):
+def showprogress(func):
     def wrapper(*args,**kwargs):
         if kwargs.get('progress',None) is None:
             # with warnings.catch_warnings():
@@ -29,8 +29,8 @@ def ProgressDecorator(func):
             return func(*args,**kwargs)
     return wrapper
 
-@FilterWarningsDecorator
-@ProgressDecorator
+@ignorewarnings
+@showprogress
 def run_basefit(galaxy,base_filter,
                fit_complex_model,blur_psf,
                N_mainloop_iter,
@@ -65,14 +65,15 @@ def run_basefit(galaxy,base_filter,
                 max_iter=30,progress=progress)
     progress.update(progress_main, advance=1, refresh=True)
     for _ in range(N_mainloop_iter):
+        _cutoutdata.fit_sky(fit_to='residual',plot=True)
         fitter_2.fit(fit_to='psf_sub_data',method='iterative_NM',
                      max_iter=15, progress=progress)
         fitter_psf.fit(fit_to='sersic_residual',plot=False,
                        progress=progress)
         progress.update(progress_main, advance=1, refresh=True)
   
-@FilterWarningsDecorator  
-@ProgressDecorator
+@ignorewarnings  
+@showprogress
 def run_scalefit(galaxy,filtername,base_params,allow_refit,
                fit_complex_model,blur_psf,
                N_mainloop_iter,
@@ -82,7 +83,7 @@ def run_scalefit(galaxy,filtername,base_params,allow_refit,
     
     # basic statistics
     _cutoutdata.perform_bkg_stats()
-    _cutoutdata.blur_psf(blur_psf[filtername])
+    _cutoutdata.blur_psf(blur_psf)
 
     # initialize model and fitters
     if fit_complex_model:
@@ -108,6 +109,7 @@ def run_scalefit(galaxy,filtername,base_params,allow_refit,
         _fitter_2.fit(fit_to='psf_sub_data',
                       max_iter=20,progress=progress)
     for _ in range(N_mainloop_iter):
+        _cutoutdata.fit_sky(fit_to='residual',plot=True)
         if allow_refit:
             _fitter_2.fit(fit_to='psf_sub_data',
                           max_iter=10,progress=progress)

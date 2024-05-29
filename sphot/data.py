@@ -21,12 +21,13 @@ import astropy.units as u
 from astropy.stats import sigma_clip
 from astropy.nddata import Cutout2D
 from astropy.modeling import models
-from astropy.modeling.fitting import LevMarLSQFitter
+from astropy.modeling.fitting import LevMarLSQFitter, LinearLSQFitter
 from astropy.modeling.functional_models import Gaussian2D
-from astropy.convolution import convolve, Gaussian2DKernel
+from astropy.modeling.models import Polynomial2D
+from astropy.convolution import convolve, Gaussian2DKernel, Ring2DKernel
 from petrofit.modeling import PSFConvolvedModel2D, model_to_image
 
-from .plotting import astroplot, plot_sersicfit_result
+from .plotting import astroplot, plot_sersicfit_result,plot_profile2d
 
 class DebugException(Exception):
     def __init__(self, message, debug_var):
@@ -231,6 +232,33 @@ class CutoutData():
         bkg_std = np.nanstd(data_annulus)
         self.remove_bkg(bkg_mean) # this updates data internally
         self.data_error = np.ones_like(self.data)*bkg_std
+        
+    def fit_sky(self,fit_to='residual',poly_deg=3,
+                radius_in=10,width=10,plot=False):
+        # prep
+        data_sky = getattr(self,fit_to)
+        p_init = Polynomial2D(degree=poly_deg)
+        fit_p = LinearLSQFitter()
+        yy,xx = np.mgrid[:self.data.shape[1], :self.data.shape[0]]
+        
+        # apply Ring median filter
+        kernel = Ring2DKernel(radius_in=radius_in,width=width)
+        data_sky_convolved = convolve(data_sky,kernel)
+        
+        # fit
+        s = np.isfinite(data_sky_convolved)
+        p = fit_p(p_init, xx[s], yy[s], data_sky_convolved[s])
+        self.sky_model = p(xx,yy)
+        
+        # plot
+        if plot:
+            fig,(ax1,ax2,ax3,ax4) = plt.subplots(1,4,figsize=(12,5))
+            norm, offset = plot_profile2d(data_sky,ax=ax1,fig=fig,lower_limit_percentile=5)
+            astroplot(data_sky_convolved,ax=ax2,norm=norm,offset=offset)
+            astroplot(p(xx,yy),ax=ax3,norm=norm,offset=offset)
+            plot_profile2d(data_sky - p(xx,yy),ax=ax4,fig=fig,lower_limit_percentile=5,norm=norm,offset=offset)
+            plt.show()
+        
         
         
 class MultiBandCutout():

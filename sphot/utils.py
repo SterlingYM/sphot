@@ -44,7 +44,7 @@ def load_and_crop(datafile,filters,folder_PSF,
     galaxy_size = cutoutdata.size_guess
     x0, y0 = cutoutdata.x0_guess, cutoutdata.y0_guess
 
-    cutout_size = galaxy_size * 6 * 2 # number of pixels in each axis (hence x2)
+    cutout_size = galaxy_size * 8 * 2 # number of pixels in each axis (hence x2)
     galaxy.crop_in(x0, y0, cutout_size)
     if plot:
         galaxy.plot()

@@ -167,6 +167,7 @@ def plot_profile2d(data,ax,fig,lower_limit_percentile=20,left=False,**kwargs):
     ax_side.axis('off')
     if left:
         ax_side.invert_xaxis()
+    return norm,offset
         
 def plot_sphot_results(cutoutdata):
     rawdata_bksub = cutoutdata._rawdata - cutoutdata._bkg_level
