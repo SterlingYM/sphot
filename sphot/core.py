@@ -38,7 +38,7 @@ def run_basefit(galaxy,base_filter,
     # 1. select base filter to fit
     cutoutdata = galaxy.images[base_filter]
     cutoutdata.perform_bkg_stats()
-    cutoutdata.blur_psf(blur_psf[base_filter])
+    cutoutdata.blur_psf(blur_psf)
 
     # 2. make models & prepare fitters
     model_1 = prep_model(cutoutdata,simple=True)
