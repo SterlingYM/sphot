@@ -65,7 +65,7 @@ def run_basefit(galaxy,base_filter,
                 max_iter=30,progress=progress)
     progress.update(progress_main, advance=1, refresh=True)
     for _ in range(N_mainloop_iter):
-        _cutoutdata.fit_sky(fit_to='residual',plot=True)
+        cutoutdata.fit_sky(fit_to='residual',plot=True)
         fitter_2.fit(fit_to='psf_sub_data',method='iterative_NM',
                      max_iter=15, progress=progress)
         fitter_psf.fit(fit_to='sersic_residual',plot=False,
