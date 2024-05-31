@@ -19,8 +19,13 @@ def ignorewarnings(func):
             
 def showprogress(func):
     def wrapper(*args,**kwargs):
+        print(kwargs)
         if kwargs.get('progress',None) is None:
             console = kwargs.get('console',None)
+            if console is not None:
+                print('console object detected: switching output to given console')
+            else:
+                print('console object is not detected: using the standard output')
             with Progress(transient=False,console=console) as progress:
                 kwargs.update(dict(progress=progress))
                 return func(*args,**kwargs)
@@ -33,7 +38,7 @@ def showprogress(func):
 def run_basefit(galaxy,base_filter,
                fit_complex_model,blur_psf,
                N_mainloop_iter,
-               progress=None):
+               progress=None,**kwargs):
     # 1. select base filter to fit
     cutoutdata = galaxy.images[base_filter]
     cutoutdata.perform_bkg_stats()
@@ -76,7 +81,8 @@ def run_basefit(galaxy,base_filter,
 def run_scalefit(galaxy,filtername,base_params,allow_refit,
                fit_complex_model,blur_psf,
                N_mainloop_iter,
-               progress=None):
+               progress=None,
+               **kwargs):
     print(f'*** working on {filtername} ***')
     _cutoutdata = galaxy.images[filtername]
     
