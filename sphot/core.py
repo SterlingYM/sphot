@@ -20,9 +20,8 @@ def ignorewarnings(func):
 def showprogress(func):
     def wrapper(*args,**kwargs):
         if kwargs.get('progress',None) is None:
-            # with warnings.catch_warnings():
-            #     warnings.simplefilter('ignore')
-            with Progress(transient=False) as progress:
+            console = kwargs.get('console',None)
+            with Progress(transient=False,console=console) as progress:
                 kwargs.update(dict(progress=progress))
                 return func(*args,**kwargs)
         else:
