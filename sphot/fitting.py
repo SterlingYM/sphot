@@ -220,10 +220,11 @@ class ModelFitter():
         sersic_residual -= self.cutoutdata._bkg_level 
         
         # save all information in cutoutdata
+        sky_model = getattr(self.cutoutdata,'sky_model',0)        
         self.cutoutdata.sersic_params_physical = bestfit_sersic_params_physical
         self.cutoutdata.sersic_params = result.x
         self.cutoutdata.sersic_modelimg = bestfit_img
-        self.cutoutdata.sersic_residual = sersic_residual
+        self.cutoutdata.sersic_residual = sersic_residual - sky_model
         self.model.x0 = result.x
         save_bestfit_params(self.cutoutdata,bestfit_sersic_params_physical)
         
@@ -306,10 +307,11 @@ class ModelScaleFitter(ModelFitter):
         sersic_residual -= self.cutoutdata._bkg_level 
         
         # save all information in cutoutdata
+        sky_model = getattr(self.cutoutdata,'sky_model',0)        
         self.cutoutdata.sersic_params_physical = bestfit_sersic_params_physical
         self.cutoutdata.sersic_params = scaled_modelparams
         self.cutoutdata.sersic_modelimg = bestfit_img
-        self.cutoutdata.sersic_residual = sersic_residual
+        self.cutoutdata.sersic_residual = sersic_residual - sky_model
         self.model.x0 = result.x
         save_bestfit_params(self.cutoutdata,bestfit_sersic_params_physical)
         return self.cutoutdata

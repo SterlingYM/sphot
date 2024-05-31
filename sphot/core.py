@@ -65,7 +65,7 @@ def run_basefit(galaxy,base_filter,
                 max_iter=30,progress=progress)
     progress.update(progress_main, advance=1, refresh=True)
     for _ in range(N_mainloop_iter):
-        cutoutdata.fit_sky(fit_to='residual',plot=True)
+        cutoutdata.fit_sky(fit_to='residual_masked',plot=True)
         fitter_2.fit(fit_to='psf_sub_data',method='iterative_NM',
                      max_iter=15, progress=progress)
         fitter_psf.fit(fit_to='sersic_residual',plot=False,
@@ -103,18 +103,21 @@ def run_scalefit(galaxy,filtername,base_params,allow_refit,
     _fitter_psf.fit(fit_to='sersic_residual',
                     plot=False,progress=progress)
     progress.update(progress_main, advance=1, refresh=True)
-
+    _cutoutdata.remove_sky(fit_to='residual_masked',
+                            remove_from='psf_sub_data')
+    
     if allow_refit:
         _fitter_2.model.x0 = _cutoutdata.sersic_params
         _fitter_2.fit(fit_to='psf_sub_data',
                       max_iter=20,progress=progress)
     for _ in range(N_mainloop_iter):
-        _cutoutdata.fit_sky(fit_to='residual',plot=True)
+        _cutoutdata.fit_sky(fit_to='residual_masked')
         if allow_refit:
             _fitter_2.fit(fit_to='psf_sub_data',
                           max_iter=10,progress=progress)
         else:
-            _fitter_scale.fit(fit_to='data',progress=progress)
+            _fitter_scale.fit(fit_to='psf_sub_data',progress=progress)
         _fitter_psf.fit(fit_to='sersic_residual',plot=False,progress=progress)
+
         plt.show()
         progress.update(progress_main, advance=1, refresh=True)

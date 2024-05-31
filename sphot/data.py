@@ -233,8 +233,13 @@ class CutoutData():
         self.remove_bkg(bkg_mean) # this updates data internally
         self.data_error = np.ones_like(self.data)*bkg_std
         
-    def fit_sky(self,fit_to='residual',poly_deg=3,
-                radius_in=10,width=10,plot=False):
+    def remove_sky(self,fit_to='residual_masked',remove_from='psf_sub_data',**kwargs):
+        self.fit_sky(fit_to=fit_to,**kwargs)
+        _data = getattr(self,remove_from)
+        setattr(self,remove_from,_data-self.sky_model)    
+    
+    def fit_sky(self,fit_to='residual_masked',poly_deg=3,
+                radius_in=7,width=7,plot=False):
         # prep
         data_sky = getattr(self,fit_to)
         p_init = Polynomial2D(degree=poly_deg)
@@ -284,13 +289,14 @@ class MultiBandCutout():
     def image_list(self):
         return [getattr(self,filtername) for filtername in self.filters]  
     
-    def plot(self):
+    def plot(self,attr='data'):
         fig,axes = plt.subplots(1,len(self.filters),
                                 figsize=(4*len(self.filters),4))
         for filt, ax in zip(self.filters,axes):
-            astroplot(self.images[filt].data,ax=ax)
+            _data = getattr(self.images[filt],attr)
+            astroplot(_data,ax=ax)
             ax.set_title(filt)
-        fig.suptitle(self.name,fontsize=15)    
+        fig.suptitle(f'{self.name} {attr}',fontsize=15)    
         
     def crop_in(self,x0,y0,size):
         ''' crop-in and re-generate the MultiBandCutout object

@@ -46,25 +46,26 @@ class PSFFitter():
         
     def fit(self,fit_to='sersic_residual',**kwargs):
         self.data = getattr(self.cutoutdata,fit_to)
-        
-        # remove sky gradient if applicable
-        sky_model = 0
-        if hasattr(self.cutoutdata,'sky_model'):
-            sky_model = getattr(self.cutoutdata,'sky_model')
-            self.data -= sky_model
             
+        x0 = self.cutoutdata.sersic_params_physical['x_0']
+        y0 = self.cutoutdata.sersic_params_physical['y_0']
+        center_mask_params = [x0,y0,self.psf_sigma*2]
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            psf_table, resid = iterative_psf_fitting(self.data,self.cutoutdata.psf,
+            psf_table, resid = iterative_psf_fitting(self.data,
+                                                     self.cutoutdata.psf,
                                                     psf_sigma = self.psf_sigma,
                                                     psf_oversample = self.cutoutdata.psf_oversample,
                                                     threshold_list = np.arange(1.6,3.2,0.2)[::-1],
+                                                    center_mask_params=center_mask_params,
                                                     **kwargs)
         psf_model_total = self.data - resid
 
         # generate PSF-subtracted data
-        mask = sigma_clip_outside_aperture(resid,self.cutoutdata.galaxy_size,clip_sigma=5,
-                                        aper_size_in_r_eff=2,plot=True)
+        mask = sigma_clip_outside_aperture(resid,
+                                           self.cutoutdata.galaxy_size,clip_sigma=4,
+                                           aper_size_in_r_eff=2,
+                                           plot=True)
         psf_subtracted_data = self.cutoutdata._rawdata - psf_model_total
         psf_subtracted_data[mask] = np.nan
 
@@ -72,13 +73,20 @@ class PSFFitter():
         data_annulus = get_data_annulus(psf_subtracted_data,5*self.cutoutdata.galaxy_size,plot=False)
         bkg_mean = np.nanmean(data_annulus)
         bkg_std = np.nanstd(data_annulus)
-        psf_subtracted_data_bksub = psf_subtracted_data - bkg_mean - sky_model
+        psf_subtracted_data_bksub = psf_subtracted_data - bkg_mean 
         psf_subtracted_data_bksub_error = np.ones_like(psf_subtracted_data)*bkg_std
         
+        # make the residual image
+        residual_img = resid#self.data - psf_model_total
+        residual_masked = residual_img.copy()
+        residual_masked[mask] = np.nan
+        
         # save data
-        self.cutoutdata.residual = self.data - psf_model_total
+        sky_model = getattr(self.cutoutdata,'sky_model',0)        
+        self.cutoutdata.residual = residual_img
+        self.cutoutdata.residual_masked = residual_masked
         self.cutoutdata.psf_modelimg = psf_model_total
-        self.cutoutdata.psf_sub_data = psf_subtracted_data_bksub
+        self.cutoutdata.psf_sub_data = psf_subtracted_data_bksub - sky_model
         self.cutoutdata.psf_sub_data_error = psf_subtracted_data_bksub_error
         self.cutoutdata.psf_table = psf_table
         return self.cutoutdata
@@ -144,7 +152,7 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
         return None,None,None,None
     
     for _ in range(Niter):
-        s = filter_psfphot_results(phot_result)
+        s = filter_psfphot_results(phot_result,**kwargs)
         if (s is None) or (s.sum() == 0):
             return None,None,None,None
         init_params = QTable()
@@ -170,7 +178,7 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
     # results
     # Remove flagged PSFs
     fit_models = np.asarray(psfphot._fit_models)
-    s = filter_psfphot_results(phot_result)
+    s = filter_psfphot_results(phot_result,**kwargs)
     if (s is None) or (s.sum() == 0):
         return None,None,None,None
     model_img = make_modelimg(fit_models[s],shape=data.shape,
@@ -186,10 +194,13 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
     return phot_result[s], data_bksub, model_img, resid
 
 def filter_psfphot_results(phot_result,
-                           cfit_percentiles=[10,90],
+                           center_mask_params=None,
+                           cfit_percentiles=[5,95],
                            qfit_percentiles=[0,90],
-                           max_relative_error_flux=0.2):
+                           max_relative_error_flux=0.2,
+                           **kwargs):
     ''' Filter the PSF photometry results. '''
+
     try:
         cfit_min,cfit_max = np.percentile(phot_result['cfit'],cfit_percentiles)
         qfit_min,qfit_max = np.percentile(phot_result['qfit'],qfit_percentiles)
@@ -197,6 +208,12 @@ def filter_psfphot_results(phot_result,
         return None
     
     s = phot_result['flags'] <= 1
+    
+    if center_mask_params is not None:
+        x_center,y_center,mask_r = center_mask_params
+        xdist = phot_result['x_fit'] - x_center
+        ydist = phot_result['y_fit'] - y_center
+        s = s & (xdist**2 + ydist**2 > mask_r**2)
     s = s & (phot_result['cfit'] >= cfit_min) & (phot_result['cfit'] <= cfit_max)
     s = s & (phot_result['qfit'] >= qfit_min) & (phot_result['qfit'] <= qfit_max)
     s = s & (phot_result['flux_err']/phot_result['flux_fit'] <= max_relative_error_flux)
