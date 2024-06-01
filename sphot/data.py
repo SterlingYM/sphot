@@ -238,7 +238,7 @@ class CutoutData():
         _data = getattr(self,remove_from)
         setattr(self,remove_from,_data-self.sky_model)    
     
-    def fit_sky(self,fit_to='residual_masked',poly_deg=3,
+    def fit_sky(self,fit_to='residual_masked',poly_deg=1,
                 radius_in=7,width=7,plot=False):
         # prep
         data_sky = getattr(self,fit_to)
@@ -263,8 +263,6 @@ class CutoutData():
             astroplot(p(xx,yy),ax=ax3,norm=norm,offset=offset)
             plot_profile2d(data_sky - p(xx,yy),ax=ax4,fig=fig,lower_limit_percentile=5,norm=norm,offset=offset)
             plt.show()
-        
-        
         
 class MultiBandCutout():
     ''' a container for CutoutData '''
