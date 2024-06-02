@@ -189,7 +189,7 @@ def plot_sphot_results(cutoutdata):
     ax5 = fig.add_axes([0.95,0.55,0.55,0.55])
 
     cmap='viridis'
-    norm,offset = astroplot(rawdata_bksub,ax=ax1,percentiles=[0,99.5],cmap=cmap)
+    norm,offset = astroplot(rawdata_bksub,ax=ax1,percentiles=[0.1,99.9],cmap=cmap)
     plot_profile2d(rawdata_bksub,ax0,fig,cmap=cmap,left=True,norm=norm,offset=offset)
     astroplot(bestfit_sersic_img,ax=ax2,norm=norm,offset=offset,cmap=cmap)
     astroplot(sersic_residual,ax=ax3,norm=norm,offset=offset,cmap=cmap)

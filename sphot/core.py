@@ -19,7 +19,6 @@ def ignorewarnings(func):
             
 def showprogress(func):
     def wrapper(*args,**kwargs):
-        print(kwargs)
         if kwargs.get('progress',None) is None:
             console = kwargs.get('console',None)
             if console is not None:
