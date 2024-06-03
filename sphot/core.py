@@ -6,9 +6,12 @@ from .plotting import plot_sphot_results
 import glob
 import sys
 import warnings
-from rich.progress import Progress
-
+from rich.progress import (Progress, TimeElapsedColumn, 
+                           TimeRemainingColumn, BarColumn, TextColumn)
+import logging
 import matplotlib.pyplot as plt
+
+from .logging import logger
 
 def ignorewarnings(func):
     def wrapper(*args,**kwargs):
@@ -22,10 +25,19 @@ def showprogress(func):
         if kwargs.get('progress',None) is None:
             console = kwargs.get('console',None)
             if console is not None:
-                print('console object detected: switching output to given console')
+                logger.info('console object detected: switching output to given console')
             else:
-                print('console object is not detected: using the standard output')
-            with Progress(transient=False,console=console) as progress:
+                logger.info('console object is not detected: using the standard output')
+            progress =  Progress(
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TimeElapsedColumn(),
+                TimeRemainingColumn(),
+                transient=False,
+                console=console
+            )
+            with progress:
                 kwargs.update(dict(progress=progress))
                 return func(*args,**kwargs)
         else:
@@ -55,7 +67,7 @@ def run_basefit(galaxy,base_filter,
     fitter_psf = PSFFitter(cutoutdata)
 
     # 3. fit the profile
-    print(f'Fitting the base filter {base_filter}...')
+    logger.info(f'Fitting the base filter {base_filter}...')
     progress_main = progress.add_task('Sphot main loop', 
                                       total=N_mainloop_iter+1)
 
@@ -82,7 +94,7 @@ def run_scalefit(galaxy,filtername,base_params,allow_refit,
                N_mainloop_iter,
                progress=None,
                **kwargs):
-    print(f'*** working on {filtername} ***')
+    logger.info(f'*** working on {filtername} ***')
     _cutoutdata = galaxy.images[filtername]
     
     # basic statistics

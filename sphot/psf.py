@@ -17,6 +17,7 @@ from photutils.background import (LocalBackground, MMMBackground,
                                   MADStdBackgroundRMS)
 
 from .data import get_data_annulus
+from .logging import logger
 
 def make_modelimg(fit_models,shape,psf_shape):
     ''' modified version of photutil's function.
@@ -96,7 +97,7 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
                       max_relative_error_flux=0.2,
                       plot=True,
                       **kwargs):
-    """ Performs PSF photometry.
+    """ Performs PSF photometry. Main function to run PSF photometry.
     Args:
         data (2d array): the data to perform PSF photometry.
         psfimg (2d array): the PSF image.
@@ -127,6 +128,7 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
         bkg_std = bkgrms(data_bksub)
         error = np.ones_like(data_bksub) * bkg_std
     except Exception as e:
+        logger.info('PSF background stats failed.')
         astroplot(data)
         raise e
         return None,None,None,None
@@ -146,14 +148,18 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
                                     maxiters=5,fitter_maxiters=300)
     try:
         phot_result = psf_iter(data_bksub, error=error)
-    except Exception:
+    except Exception as e:
+        logger.info('IterativePSFPhotometry failed:',e)
         phot_result = None
     if phot_result is None:
+        logger.info('No detection.')
         return None,None,None,None
     
+    # repeat psf_iter Niter times to (hopefully) re-fit flagged sources
     for _ in range(Niter):
-        s = filter_psfphot_results(phot_result,**kwargs)
+        s,msg = filter_psfphot_results(phot_result,**kwargs)
         if (s is None) or (s.sum() == 0):
+            logger.info(f'No source passed the cut ({len(phot_result)} detection).'+msg)
             return None,None,None,None
         init_params = QTable()
         init_params['x'] = phot_result['x_fit'].value[s]
@@ -161,8 +167,9 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
         phot_result = psf_iter(data_bksub, error=error, init_params=init_params)
 
     # final run
-    s = filter_psfphot_results(phot_result)
+    s,msg = filter_psfphot_results(phot_result)
     if s.sum() == 0:
+        logger.info('all sources are flagged.'+msg)
         return None,None,None,None
     init_params = QTable()
     init_params['x'] = phot_result['x_fit'].value[s]
@@ -174,12 +181,15 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
                             fitter_maxiters=300)
     phot_result = psfphot(data_bksub, error=error, init_params=init_params)
     if phot_result is None:
+        logger.info('PSFPhotometry failed.')
         return None,None,None,None
+    
     # results
     # Remove flagged PSFs
     fit_models = np.asarray(psfphot._fit_models)
-    s = filter_psfphot_results(phot_result,**kwargs)
+    s,msg = filter_psfphot_results(phot_result,**kwargs)
     if (s is None) or (s.sum() == 0):
+        logger.info('all sources are flagged.'+msg)
         return None,None,None,None
     model_img = make_modelimg(fit_models[s],shape=data.shape,
                             psf_shape=(25,25))
@@ -202,22 +212,31 @@ def filter_psfphot_results(phot_result,
     ''' Filter the PSF photometry results. '''
 
     try:
-        cfit_min,cfit_max = np.percentile(phot_result['cfit'],cfit_percentiles)
-        qfit_min,qfit_max = np.percentile(phot_result['qfit'],qfit_percentiles)
+        cfit_min,cfit_max = np.nanpercentile(phot_result['cfit'],cfit_percentiles)
+        qfit_min,qfit_max = np.nanpercentile(phot_result['qfit'],qfit_percentiles)
     except Exception:
         return None
     
-    s = phot_result['flags'] <= 1
+    s_flags = phot_result['flags'] <= 1
+    s_cfit = (phot_result['cfit'] >= cfit_min) & (phot_result['cfit'] <= cfit_max)
+    s_qfit = (phot_result['qfit'] >= qfit_min) & (phot_result['qfit'] <= qfit_max)
+    s_fluxerr = (phot_result['flux_err']/phot_result['flux_fit'] <= max_relative_error_flux)
+    
+    s = s_flags & s_cfit & s_qfit & s_fluxerr
+    msg = f'\nsources that passed each cut (not cumulative):\n\
+    flags: {s_flags.sum()},\n\
+    cfit: {s_cfit.sum()},\n\
+    qfit: {s_qfit.sum()},\n\
+    flux_err/flux_fit: {s_fluxerr.sum()},\n'
     
     if center_mask_params is not None:
         x_center,y_center,mask_r = center_mask_params
         xdist = phot_result['x_fit'] - x_center
         ydist = phot_result['y_fit'] - y_center
-        s = s & (xdist**2 + ydist**2 > mask_r**2)
-    s = s & (phot_result['cfit'] >= cfit_min) & (phot_result['cfit'] <= cfit_max)
-    s = s & (phot_result['qfit'] >= qfit_min) & (phot_result['qfit'] <= qfit_max)
-    s = s & (phot_result['flux_err']/phot_result['flux_fit'] <= max_relative_error_flux)
-    return s
+        s_centermask = (xdist**2 + ydist**2 > mask_r**2)
+        s = s & s_centermask
+        msg += f'center_mask: {int(s_centermask.sum())}\n'
+    return s, msg
 
 def sigma_clip_outside_aperture(data,r_eff,clip_sigma=4,
                                 aper_size_in_r_eff=1,plot=True):
@@ -236,35 +255,31 @@ def iterative_psf_fitting(data,psfimg,psf_sigma,psf_oversample,
                           progress_text='Running iPSF...',
                         #   ignore_warnings=True,
                           **kwargs):
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        psf_results = do_psf_photometry(data, psfimg,
+    ''' Perform iterative PSF fitting.'''
+            
+    # if resid is None:
+    resid = data
+    phot_result = None
+    
+    # repeat PSF subtraction
+    if progress is not None:
+        progress_psf = progress.add_task(progress_text, 
+                                        total=len(threshold_list))
+    for th in threshold_list:
+        psf_results = do_psf_photometry(resid, psfimg,
                                         psf_sigma= psf_sigma,
                                         psf_oversample=psf_oversample,
-                                        th=threshold_list[0],
-                                        **kwargs)
-        phot_result, data_bksub, psfmodel_img, resid = psf_results
-        if resid is None:
-            resid = data
-        # repeat PSF subtraction
+                                        th=th,**kwargs)
         if progress is not None:
-            progress_psf = progress.add_task(progress_text, 
-                                            total=len(threshold_list))
-        for th in threshold_list:
-            psf_results = do_psf_photometry(resid, psfimg,
-                                            psf_sigma= psf_sigma,
-                                            psf_oversample=psf_oversample,
-                                            th=th,**kwargs)
-            if progress is not None:
-                progress.update(progress_psf, advance=1, refresh=True)
-            if psf_results[0] is not None:
-                _phot_result, _, _, resid = psf_results
-                if phot_result is not None:
-                    phot_result = vstack([phot_result, _phot_result])
-                else:
-                    phot_result = _phot_result
+            progress.update(progress_psf, advance=1, refresh=True)
+        if psf_results[0] is not None:
+            _phot_result, _, _, resid = psf_results
+            if phot_result is None:
+                phot_result = _phot_result
             else:
-                continue
+                phot_result = vstack([phot_result, _phot_result])
+        else:
+            continue
     if progress is not None:
         progress.remove_task(progress_psf)
     return phot_result, resid

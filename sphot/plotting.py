@@ -187,7 +187,12 @@ def plot_sphot_results(cutoutdata):
     ax2 = fig.add_axes([0.66,0.66,0.25,0.25])
     ax1 = fig.add_axes([0.4,0.92,0.25,0.25])
     ax5 = fig.add_axes([0.95,0.55,0.55,0.55])
-
+    ax_name = fig.add_axes([0.4,0.66,0.25,0.25])
+    ax_name.axis('off')
+    ax_name.text(0.5,0.5,cutoutdata.filtername,
+                 transform=ax_name.transAxes,
+                 ha='center',va='center',fontsize=28,color='k')
+    
     cmap='viridis'
     norm,offset = astroplot(rawdata_bksub,ax=ax1,percentiles=[0.1,99.9],cmap=cmap)
     plot_profile2d(rawdata_bksub,ax0,fig,cmap=cmap,left=True,norm=norm,offset=offset)

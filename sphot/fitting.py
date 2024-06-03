@@ -358,7 +358,7 @@ def iterative_NM(func,args,x0,bounds,
 
     ##  initial fit
     # set starting value
-    print('',end='',flush=True)
+    # print('',end='',flush=True)
     chi2_init = func(x0,*args)
     chi2_vals = [chi2_init]
     convergence = False
@@ -462,7 +462,7 @@ def profile_stats(cutoutdata,fit_to='psf_sub_data',
     data_filled = data.copy()
     error_filled = getattr(cutoutdata,fit_to+'_error',None)
     if error_filled is None:
-        print(fit_to+'_error not available: using psf_sub_data_error')
+        sphot.info(fit_to+'_error not available: using psf_sub_data_error')
         error_filled = getattr(cutoutdata,'psf_sub_data_error',None)
     if error_filled is not None:
         error_filled = error_filled.copy()
