@@ -28,6 +28,8 @@ def showprogress(func):
                 logger.info('console object detected: switching output to given console')
             else:
                 logger.info('console object is not detected: using the standard output')
+                
+            # initialize progress bar object
             progress =  Progress(
                 TextColumn("[progress.description]{task.description}"),
                 BarColumn(),

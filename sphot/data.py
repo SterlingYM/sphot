@@ -333,7 +333,7 @@ class MultiBandCutout():
                             continue
                 else:
                     f.create_dataset(g_key,data=str_to_json(g_val))
-        sphot.info(f'Saved to {filepath}')
+        logger.info(f'Saved to {filepath}')
 
 def load_h5data(filepath,name,filters,PSFs_dict):
     galaxy = MultiBandCutout(name = name)
