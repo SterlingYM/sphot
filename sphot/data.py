@@ -28,6 +28,7 @@ from astropy.convolution import convolve, Gaussian2DKernel, Ring2DKernel
 from petrofit.modeling import PSFConvolvedModel2D, model_to_image
 
 from .plotting import astroplot, plot_sersicfit_result,plot_profile2d
+from .logging import logger
 
 class DebugException(Exception):
     def __init__(self, message, debug_var):
