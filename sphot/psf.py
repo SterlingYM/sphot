@@ -57,7 +57,7 @@ class PSFFitter():
                                                      self.cutoutdata.psf,
                                                     psf_sigma = self.psf_sigma,
                                                     psf_oversample = self.cutoutdata.psf_oversample,
-                                                    threshold_list = np.arange(1.6,3.2,0.2)[::-1],
+                                                    threshold_list = np.arange(1,3.2,0.2)[::-1],
                                                     center_mask_params=center_mask_params,
                                                     **kwargs)
         psf_model_total = self.data - resid
@@ -127,6 +127,7 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
         data_bksub = data - bkg_level
         bkg_std = bkgrms(data_bksub)
         error = np.ones_like(data_bksub) * bkg_std
+        kwargs.update({'data_shape':data_bksub.shape})
     except Exception as e:
         logger.info('PSF background stats failed.')
         astroplot(data)
@@ -149,7 +150,7 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
     try:
         phot_result = psf_iter(data_bksub, error=error)
     except Exception as e:
-        logger.info('IterativePSFPhotometry failed:',e)
+        logger.info(f'IterativePSFPhotometry failed due to: {type(e)}')
         phot_result = None
     if phot_result is None:
         logger.info('No detection.')
@@ -164,10 +165,13 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
         init_params = QTable()
         init_params['x'] = phot_result['x_fit'].value[s]
         init_params['y'] = phot_result['y_fit'].value[s]
-        phot_result = psf_iter(data_bksub, error=error, init_params=init_params)
+        try:
+            phot_result = psf_iter(data_bksub, error=error, init_params=init_params)
+        except Exception as e:
+            pass
 
     # final run
-    s,msg = filter_psfphot_results(phot_result)
+    s,msg = filter_psfphot_results(phot_result,**kwargs)
     if s.sum() == 0:
         logger.info('all sources are flagged.'+msg)
         return None,None,None,None
@@ -208,9 +212,9 @@ def filter_psfphot_results(phot_result,
                            cfit_percentiles=[5,95],
                            qfit_percentiles=[0,90],
                            max_relative_error_flux=0.2,
+                           data_shape=None,
                            **kwargs):
     ''' Filter the PSF photometry results. '''
-
     try:
         cfit_min,cfit_max = np.nanpercentile(phot_result['cfit'],cfit_percentiles)
         qfit_min,qfit_max = np.nanpercentile(phot_result['qfit'],qfit_percentiles)
@@ -223,7 +227,7 @@ def filter_psfphot_results(phot_result,
     s_fluxerr = (phot_result['flux_err']/phot_result['flux_fit'] <= max_relative_error_flux)
     
     s = s_flags & s_cfit & s_qfit & s_fluxerr
-    msg = f'\nsources that passed each cut (not cumulative):\n\
+    msg = f'\nsources that passed each cut (not cumulative, out of {len(phot_result)}):\n\
     flags: {s_flags.sum()},\n\
     cfit: {s_cfit.sum()},\n\
     qfit: {s_qfit.sum()},\n\
@@ -235,7 +239,15 @@ def filter_psfphot_results(phot_result,
         ydist = phot_result['y_fit'] - y_center
         s_centermask = (xdist**2 + ydist**2 > mask_r**2)
         s = s & s_centermask
-        msg += f'center_mask: {int(s_centermask.sum())}\n'
+        msg += f'    center_mask: {int(s_centermask.sum())}\n'
+        
+    if data_shape is not None:
+        x,y = phot_result['x_fit'],phot_result['y_fit']
+        s_edge = (x > 0) & (x < data_shape[1]) & (y > 0) & (y < data_shape[0])
+        s = s & s_edge
+        msg += f'    edge: {int(s_edge.sum())}\n'    
+    
+    msg += f'Sources that passed all of the above cuts: {int(s.sum())}\n'
     return s, msg
 
 def sigma_clip_outside_aperture(data,r_eff,clip_sigma=4,

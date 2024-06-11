@@ -122,20 +122,26 @@ def run_scalefit(galaxy,filtername,base_params,allow_refit,
                     plot=False,progress=progress)
     progress.update(progress_main, advance=1, refresh=True)
     _cutoutdata.remove_sky(fit_to='residual_masked',
-                            remove_from='psf_sub_data')
+                            remove_from='psf_sub_data',**kwargs)
     
     if allow_refit:
         _fitter_2.model.x0 = _cutoutdata.sersic_params
         _fitter_2.fit(fit_to='psf_sub_data',
                       max_iter=20,progress=progress)
     for _ in range(N_mainloop_iter):
-        _cutoutdata.fit_sky(fit_to='residual_masked')
+        _cutoutdata.fit_sky(fit_to='residual_masked',**kwargs)
         if allow_refit:
             _fitter_2.fit(fit_to='psf_sub_data',
                           max_iter=10,progress=progress)
         else:
             _fitter_scale.fit(fit_to='psf_sub_data',progress=progress)
         _fitter_psf.fit(fit_to='sersic_residual',plot=False,progress=progress)
-
         plt.show()
         progress.update(progress_main, advance=1, refresh=True)
+        
+    # final sky subtraction
+    _cutoutdata.remove_sky(fit_to='residual_masked',
+                           remove_from='psf_sub_data',**kwargs)
+    _cutoutdata.remove_sky(fit_to='residual_masked',
+                           remove_from='residual_masked',**kwargs)
+    logger.info(f'*** {filtername} done ***')

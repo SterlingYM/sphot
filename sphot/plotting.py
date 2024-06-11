@@ -15,7 +15,7 @@ from astropy.stats import sigma_clip
 from astropy.nddata import Cutout2D
 from astropy.modeling import models
 
-def astroplot(data,percentiles=[1,99.5],cmap='viridis',ax=None,
+def astroplot(data,percentiles=[1,99.9],cmap='viridis',ax=None,
               offset=0,norm=None,figsize=(5,5),title=None,set_bad='r'):
     if (data is None) or np.isnan(data).all():
         raise ValueError('Data is empty!')

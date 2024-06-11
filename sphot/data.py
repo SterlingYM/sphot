@@ -240,7 +240,7 @@ class CutoutData():
         setattr(self,remove_from,_data-self.sky_model)    
     
     def fit_sky(self,fit_to='residual_masked',poly_deg=1,
-                radius_in=7,width=7,plot=False):
+                radius_in=7,width=7,plot=False,**kwargs):
         # prep
         data_sky = getattr(self,fit_to)
         p_init = Polynomial2D(degree=poly_deg)
