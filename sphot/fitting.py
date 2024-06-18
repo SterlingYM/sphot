@@ -217,14 +217,21 @@ class ModelFitter():
                                                 self.unstandardize_params(result.x)))
         bestfit_img = self.eval_model(result.x)
         sersic_residual = self.cutoutdata._rawdata - bestfit_img # always take residual from raw data
-        sersic_residual -= self.cutoutdata._bkg_level 
+        # sersic_residual -= self.cutoutdata._bkg_level 
+        
+        # update the total residual
+        psf_modelimg = getattr(self.cutoutdata,'psf_modelimg',0)
+        residual_img = self.cutoutdata._rawdata - psf_modelimg - bestfit_img
+        residual_masked = residual_img.copy() # no sigma clipping
         
         # save all information in cutoutdata
-        sky_model = getattr(self.cutoutdata,'sky_model',0)        
+        # sky_model = getattr(self.cutoutdata,'sky_model',0)        
         self.cutoutdata.sersic_params_physical = bestfit_sersic_params_physical
         self.cutoutdata.sersic_params = result.x
         self.cutoutdata.sersic_modelimg = bestfit_img
-        self.cutoutdata.sersic_residual = sersic_residual - sky_model
+        self.cutoutdata.sersic_residual = sersic_residual #- sky_model
+        self.cutoutdata.residual = residual_img
+        self.cutoutdata.residual_masked = residual_masked
         self.model.x0 = result.x
         save_bestfit_params(self.cutoutdata,bestfit_sersic_params_physical)
         
@@ -304,14 +311,21 @@ class ModelScaleFitter(ModelFitter):
                                                 self.unstandardize_params(scaled_modelparams)))
         bestfit_img = self.eval_model(scaled_modelparams)
         sersic_residual = self.cutoutdata._rawdata - bestfit_img # always take residual from raw data
-        sersic_residual -= self.cutoutdata._bkg_level 
+        # sersic_residual -= self.cutoutdata._bkg_level 
+        
+        # update the total residual
+        psf_modelimg = getattr(self.cutoutdata,'psf_modelimg',0)
+        residual_img = self.cutoutdata._rawdata - psf_modelimg - bestfit_img
+        residual_masked = residual_img.copy() # no sigma clipping
         
         # save all information in cutoutdata
-        sky_model = getattr(self.cutoutdata,'sky_model',0)        
+        # sky_model = getattr(self.cutoutdata,'sky_model',0)        
         self.cutoutdata.sersic_params_physical = bestfit_sersic_params_physical
         self.cutoutdata.sersic_params = scaled_modelparams
         self.cutoutdata.sersic_modelimg = bestfit_img
-        self.cutoutdata.sersic_residual = sersic_residual - sky_model
+        self.cutoutdata.sersic_residual = sersic_residual #- sky_model
+        self.cutoutdata.residual = residual_img
+        self.cutoutdata.residual_masked = residual_masked
         self.model.x0 = result.x
         save_bestfit_params(self.cutoutdata,bestfit_sersic_params_physical)
         return self.cutoutdata

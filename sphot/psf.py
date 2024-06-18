@@ -61,6 +61,8 @@ class PSFFitter():
                                                     center_mask_params=center_mask_params,
                                                     **kwargs)
         psf_model_total = self.data - resid
+        psf_model_total -= psf_model_total.min() # PSFs are forced to be positive, so minimum is always zero
+        # TODO: handle the case where all pixels are filled with PSF
 
         # generate PSF-subtracted data
         mask = sigma_clip_outside_aperture(resid,
@@ -72,22 +74,22 @@ class PSFFitter():
 
         # subtract background (to be consistent)
         data_annulus = get_data_annulus(psf_subtracted_data,5*self.cutoutdata.galaxy_size,plot=False)
-        bkg_mean = np.nanmean(data_annulus)
+        # bkg_mean = np.nanmean(data_annulus)
         bkg_std = np.nanstd(data_annulus)
-        psf_subtracted_data_bksub = psf_subtracted_data - bkg_mean 
+        psf_subtracted_data_bksub = psf_subtracted_data #- bkg_mean 
         psf_subtracted_data_bksub_error = np.ones_like(psf_subtracted_data)*bkg_std
         
         # make the residual image
-        residual_img = resid#self.data - psf_model_total
+        sersic_modelimg = getattr(self.cutoutdata,'sersic_modelimg',0)
+        residual_img = self.cutoutdata._rawdata - psf_model_total - sersic_modelimg #- bkg_mean
         residual_masked = residual_img.copy()
         residual_masked[mask] = np.nan
         
         # save data
-        sky_model = getattr(self.cutoutdata,'sky_model',0)        
         self.cutoutdata.residual = residual_img
         self.cutoutdata.residual_masked = residual_masked
         self.cutoutdata.psf_modelimg = psf_model_total
-        self.cutoutdata.psf_sub_data = psf_subtracted_data_bksub - sky_model
+        self.cutoutdata.psf_sub_data = psf_subtracted_data_bksub 
         self.cutoutdata.psf_sub_data_error = psf_subtracted_data_bksub_error
         self.cutoutdata.psf_table = psf_table
         return self.cutoutdata

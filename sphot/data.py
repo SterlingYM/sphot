@@ -61,8 +61,9 @@ class CutoutData():
             self.filtername = filtername
             for key,val in kwargs.items():
                 setattr(self,key,val)
-            self.fix_psf()
-            self.calc_psf_sigma()
+            if self.psf is not None:
+                self.fix_psf()
+                self.calc_psf_sigma()
         else:
             # create an empty CutoutData object
             # this is useful when loading from a file
@@ -236,8 +237,10 @@ class CutoutData():
         
     def remove_sky(self,fit_to='residual_masked',remove_from='psf_sub_data',**kwargs):
         self.fit_sky(fit_to=fit_to,**kwargs)
-        _data = getattr(self,remove_from)
-        setattr(self,remove_from,_data-self.sky_model)    
+        
+        for attr in np.atleast_1d(np.squeeze(remove_from)):
+            _data = getattr(self,attr)
+            setattr(self,attr,_data-self.sky_model)    
     
     def fit_sky(self,fit_to='residual_masked',poly_deg=1,
                 radius_in=7,width=7,plot=False,**kwargs):
@@ -336,15 +339,20 @@ class MultiBandCutout():
                     f.create_dataset(g_key,data=str_to_json(g_val))
         logger.info(f'Saved to {filepath}')
 
-def load_h5data(filepath,name,filters,PSFs_dict):
+def load_h5data(filepath,name='',filters=[],PSFs_dict=None,
+                psf_oversample=4):
     galaxy = MultiBandCutout(name = name)
+    if PSFs_dict is None:
+        PSFs_dict = {filtername:None for filtername in filters}
+        logger.warning('PSFs_dict is not provided.')
+        
     with h5py.File(filepath,'r') as f:
         for filtername in filters:
             image = f[filtername][:]
             psf = PSFs_dict[filtername]
             cutoutdata = CutoutData(data = image, 
                                     psf = psf,
-                                    psf_oversample = 4,
+                                    psf_oversample = psf_oversample,
                                     filtername = filtername)
             galaxy.add_image(filtername, cutoutdata)
         f.close()

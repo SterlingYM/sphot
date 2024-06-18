@@ -97,51 +97,47 @@ def run_scalefit(galaxy,filtername,base_params,allow_refit,
                progress=None,
                **kwargs):
     logger.info(f'*** working on {filtername} ***')
-    _cutoutdata = galaxy.images[filtername]
+    cutoutdata = galaxy.images[filtername]
     
     # basic statistics
-    _cutoutdata.perform_bkg_stats()
-    _cutoutdata.blur_psf(blur_psf)
+    cutoutdata.perform_bkg_stats()
+    cutoutdata.blur_psf(blur_psf)
 
     # initialize model and fitters
     if fit_complex_model:
-        _model = prep_model(_cutoutdata,simple=False)
+        _model = prep_model(cutoutdata,simple=False)
     else:
-        _model = prep_model(_cutoutdata,simple=True)
-    _fitter_scale = ModelScaleFitter(_model,_cutoutdata,base_params)
+        _model = prep_model(cutoutdata,simple=True)
+    fitter_scale = ModelScaleFitter(_model,cutoutdata,base_params)
     if allow_refit:
-        _fitter_2 = ModelFitter(_model,_cutoutdata)
-    _fitter_psf = PSFFitter(_cutoutdata)
+        fitter_2 = ModelFitter(_model,cutoutdata)
+    fitter_psf = PSFFitter(cutoutdata)
         
     # run fitting
-    progress_main = progress.add_task('Sphot main loop', 
-                                      total=N_mainloop_iter+1)
+    progress_main = progress.add_task('Sphot main loop',total=N_mainloop_iter+1)
 
-    _fitter_scale.fit(fit_to='data',progress=progress)
-    _fitter_psf.fit(fit_to='sersic_residual',
-                    plot=False,progress=progress)
-    progress.update(progress_main, advance=1, refresh=True)
-    _cutoutdata.remove_sky(fit_to='residual_masked',
-                            remove_from='psf_sub_data',**kwargs)
-    
+    # initial fit
+    fitter_scale.fit(fit_to='data',progress=progress)
+    cutoutdata.remove_sky(fit_to='residual_masked',remove_from='sersic_residual',**kwargs)
+    fitter_psf.fit(fit_to='sersic_residual',plot=False,progress=progress)
+    cutoutdata.remove_sky(fit_to='residual_masked',remove_from='psf_sub_data',**kwargs)
     if allow_refit:
-        _fitter_2.model.x0 = _cutoutdata.sersic_params
-        _fitter_2.fit(fit_to='psf_sub_data',
-                      max_iter=20,progress=progress)
+        fitter_2.model.x0 = cutoutdata.sersic_params
+        fitter_2.fit(fit_to='psf_sub_data',max_iter=20,progress=progress)
+        cutoutdata.remove_sky(fit_to='residual_masked',remove_from='sersic_residual',**kwargs)
+    progress.update(progress_main, advance=1, refresh=True)
+
+    # repeat fitting
     for _ in range(N_mainloop_iter):
-        _cutoutdata.fit_sky(fit_to='residual_masked',**kwargs)
         if allow_refit:
-            _fitter_2.fit(fit_to='psf_sub_data',
-                          max_iter=10,progress=progress)
+            fitter_2.fit(fit_to='psf_sub_data',max_iter=10,progress=progress)
         else:
-            _fitter_scale.fit(fit_to='psf_sub_data',progress=progress)
-        _fitter_psf.fit(fit_to='sersic_residual',plot=False,progress=progress)
-        plt.show()
+            fitter_scale.fit(fit_to='psf_sub_data',progress=progress)
+        cutoutdata.remove_sky(fit_to='residual_masked',remove_from='sersic_residual',**kwargs)
+        fitter_psf.fit(fit_to='sersic_residual',plot=False,progress=progress)
+        cutoutdata.remove_sky(fit_to='residual_masked',remove_from='psf_sub_data',**kwargs)
         progress.update(progress_main, advance=1, refresh=True)
         
     # final sky subtraction
-    _cutoutdata.remove_sky(fit_to='residual_masked',
-                           remove_from='psf_sub_data',**kwargs)
-    _cutoutdata.remove_sky(fit_to='residual_masked',
-                           remove_from='residual_masked',**kwargs)
+    cutoutdata.remove_sky(fit_to='residual_masked',remove_from=['residual_masked','residual'],**kwargs)
     logger.info(f'*** {filtername} done ***')
