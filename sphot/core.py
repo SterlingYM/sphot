@@ -91,7 +91,7 @@ def run_basefit(galaxy,base_filter,
         
     # final sky subtraction
     cutoutdata.remove_sky(fit_to='residual_masked',remove_from=['residual_masked','residual'],**kwargs)
-    logger.info(f'*** Base model fit on {filtername} done ***')
+    logger.info(f'*** Base model fit completed ***')
       
 @ignorewarnings  
 @showprogress
