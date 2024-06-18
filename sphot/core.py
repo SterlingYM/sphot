@@ -70,25 +70,29 @@ def run_basefit(galaxy,base_filter,
 
     # 3. fit the profile
     logger.info(f'Fitting the base filter {base_filter}...')
-    progress_main = progress.add_task('Sphot main loop', 
-                                      total=N_mainloop_iter+1)
+    progress_main = progress.add_task('Sphot main loop', total=N_mainloop_iter+1)
 
-    fitter_1.fit(fit_to='data',max_iter=20,
-                 progress=progress)
-    fitter_psf.fit(fit_to='sersic_residual',
-                   plot=False,progress=progress)
-    fitter_2.fit(fit_to='psf_sub_data',
-                method='iterative_NM',
-                max_iter=30,progress=progress)
+    # initial fit
+    fitter_1.fit(fit_to='data',max_iter=20,progress=progress)
+    cutoutdata.remove_sky(fit_to='residual_masked',remove_from='sersic_residual',**kwargs)
+    fitter_psf.fit(fit_to='sersic_residual',plot=False,progress=progress)
+    cutoutdata.remove_sky(fit_to='residual_masked',remove_from='psf_sub_data',**kwargs)
+    fitter_2.fit(fit_to='psf_sub_data',method='iterative_NM',max_iter=30,progress=progress)
+    cutoutdata.remove_sky(fit_to='residual_masked',remove_from='sersic_residual',**kwargs)
     progress.update(progress_main, advance=1, refresh=True)
+    
+    # repeat fitting
     for _ in range(N_mainloop_iter):
-        cutoutdata.fit_sky(fit_to='residual_masked',plot=True)
-        fitter_2.fit(fit_to='psf_sub_data',method='iterative_NM',
-                     max_iter=15, progress=progress)
-        fitter_psf.fit(fit_to='sersic_residual',plot=False,
-                       progress=progress)
+        fitter_2.fit(fit_to='psf_sub_data',method='iterative_NM', max_iter=15, progress=progress)
+        cutoutdata.remove_sky(fit_to='residual_masked',remove_from='sersic_residual',**kwargs)
+        fitter_psf.fit(fit_to='sersic_residual',plot=False, progress=progress)
+        cutoutdata.remove_sky(fit_to='residual_masked',remove_from='psf_sub_data',**kwargs)
         progress.update(progress_main, advance=1, refresh=True)
-  
+        
+    # final sky subtraction
+    cutoutdata.remove_sky(fit_to='residual_masked',remove_from=['residual_masked','residual'],**kwargs)
+    logger.info(f'*** Base model fit on {filtername} done ***')
+      
 @ignorewarnings  
 @showprogress
 def run_scalefit(galaxy,filtername,base_params,allow_refit,
