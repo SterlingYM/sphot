@@ -236,7 +236,7 @@ class CutoutData():
         self.data_error = np.ones_like(self.data)*bkg_std
         
     def remove_sky(self,fit_to='residual_masked',remove_from='psf_sub_data',**kwargs):
-        N_repeat = kwargs.get('N_repeat',1)
+        N_repeat = kwargs.get('repeat',1)
         for _ in range(N_repeat):
             self.fit_sky(fit_to=fit_to,**kwargs)
             for attr in np.atleast_1d(np.squeeze(remove_from)):
