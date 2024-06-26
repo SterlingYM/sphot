@@ -168,7 +168,7 @@ class CutoutDataPhotometry():
         self.cutoutdata = cutoutdata
         self.aperture = aperture
         
-    def measure_sky(self,measure_on='residual_masked',N_apers=200,center_mask=1.5,
+    def measure_sky(self,measure_on='residual_masked',N_apers=200,center_mask=3,
                     mode='random'):
         ''' Estimate the uncertainty in aperture photometry using the background and moving aperture 
         Args:
@@ -202,7 +202,8 @@ class CutoutDataPhotometry():
             # avoid center -- this area can be biased by Sersic profile fit
             x_dist_from_center = abs((x0-data_sky.shape[1]/2))
             y_dist_from_center = abs((y0-data_sky.shape[1]/2))
-            if x_dist_from_center**2 +  y_dist_from_center**2 < (aperture_sky.a * center_mask)**2:
+            center_mask_in_pix = center_mask * max(aperture_sky.a,aperture_sky.b)
+            if x_dist_from_center**2 +  y_dist_from_center**2 < center_mask_in_pix**2:
                 continue
             
             # update aperture and do photometry

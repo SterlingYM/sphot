@@ -223,6 +223,7 @@ class CutoutData():
         self.x0_guess = centers[1]
         self.y0_guess = centers[0]
         self.size_guess = size_guess
+        return self.x0_guess,self.y0_guess,self.size_guess
         
     def remove_bkg(self,bkg_level):
         self._bkg_level = bkg_level
