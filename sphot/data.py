@@ -352,16 +352,16 @@ def load_h5data(filepath,name='',filters=[],PSFs_dict=None,
         if len(filters) == 0:
             filters = list(f.keys())
         for filtername in filters:
-            try:
-                image = f[filtername][:]
-                psf = PSFs_dict[filtername]
-                cutoutdata = CutoutData(data = image, 
-                                        psf = psf,
-                                        psf_oversample = psf_oversample,
-                                        filtername = filtername)
-                galaxy.add_image(filtername, cutoutdata)
-            except Exception:
-                logger.error(f'Error loading {filtername}')
+            # try:
+            image = f[filtername][:]
+            psf = PSFs_dict[filtername]
+            cutoutdata = CutoutData(data = image, 
+                                    psf = psf,
+                                    psf_oversample = psf_oversample,
+                                    filtername = filtername)
+            galaxy.add_image(filtername, cutoutdata)
+            # except Exception:
+            #     logger.error(f'Error loading {filtername}')
         f.close()
     return galaxy
 
