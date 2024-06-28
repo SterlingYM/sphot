@@ -344,13 +344,14 @@ class MultiBandCutout():
 def load_h5data(filepath,name='',filters=[],PSFs_dict=None,
                 psf_oversample=4):
     galaxy = MultiBandCutout(name = name)
-    if PSFs_dict is None:
-        PSFs_dict = {filtername:None for filtername in filters}
-        logger.warning('PSFs_dict is not provided.')
         
     with h5py.File(filepath,'r') as f:
         if len(filters) == 0:
             filters = list(f.keys())
+        if PSFs_dict is None:
+            PSFs_dict = {filtername:None for filtername in filters}
+            logger.warning('PSFs_dict is not provided.')
+        
         for filtername in filters:
             # try:
             image = f[filtername][:]
