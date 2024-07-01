@@ -298,7 +298,7 @@ class MultiBandCutout():
                                 figsize=(4*len(self.filters),4))
         for filt, ax in zip(self.filters,axes):
             _data = getattr(self.images[filt],attr,None)
-            if data is None:
+            if _data is None:
                 continue
             astroplot(_data,ax=ax)
             ax.set_title(filt)
