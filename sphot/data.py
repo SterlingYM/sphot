@@ -293,7 +293,7 @@ class MultiBandCutout():
     def image_list(self):
         return [getattr(self,filtername) for filtername in self.filters]  
     
-    def plot(self,attr='data'):
+    def plot(self,attr='data',title=''):
         fig,axes = plt.subplots(1,len(self.filters),
                                 figsize=(4*len(self.filters),4))
         for filt, ax in zip(self.filters,axes):
@@ -302,7 +302,7 @@ class MultiBandCutout():
                 continue
             astroplot(_data,ax=ax)
             ax.set_title(filt)
-        fig.suptitle(f'{self.name} {attr}',fontsize=15)    
+        fig.suptitle(f'{title} {self.name} {attr}',fontsize=15)    
         
     def crop_in(self,x0,y0,size):
         ''' crop-in and re-generate the MultiBandCutout object
