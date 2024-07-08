@@ -322,6 +322,9 @@ class MultiBandCutout():
             # define new CutoutData object    
             cutoutdata.data = new_cutout.data
             cutoutdata._rawdata = new_cutout.data.copy()
+            self.crop_x0 = x0
+            self.crop_y0 = y0
+            self.crop_size = size
 
     def save(self,filepath):
         ''' save the MultiBandCutout object to a h5 file '''

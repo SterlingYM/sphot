@@ -12,14 +12,17 @@ from .fitting import SphotModel
 from .data import (CutoutData, MultiBandCutout, 
                         load_h5data, get_data_annulus)
 
-def load_and_crop(datafile,filters,folder_PSF,
-                  base_filter,plot=True,custom_initial_crop=False,**kwargs):
+def load_and_crop(datafile,filters,folder_PSF=None,
+                  base_filter='F150W',plot=True,custom_initial_crop=False,**kwargs):
     # load PSFs
-    psfs_data = []
-    for filtername in filters:
-        path = glob.glob(folder_PSF + f'*{filtername}_PSF*.npy')[0]
-        psfs_data.append(np.load(path))#
-    PSFs_dict = dict(zip(filters, psfs_data))
+    if folder_PSF is None:
+        PSFs_dict = None
+    else:
+        psfs_data = []
+        for filtername in filters:
+            path = glob.glob(folder_PSF + f'*{filtername}_PSF*.npy')[0]
+            psfs_data.append(np.load(path))#
+        PSFs_dict = dict(zip(filters, psfs_data))
 
     # load data
     galaxy_ID = os.path.splitext(os.path.split(datafile)[-1])[0]
