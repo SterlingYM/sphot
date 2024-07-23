@@ -16,5 +16,8 @@ setup(
         'petrofit>=0.5',  
         'h5py>=3.10',
         'tqdm>=4.66',
+        'csaps>=1.1.0',
+        'opencv-python>4.9',
+        'scikit-image>=0.22',
     ],
 )
