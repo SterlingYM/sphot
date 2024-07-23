@@ -1,7 +1,7 @@
-Data objects
+Aperture photometry
 =================
 
-.. automodule:: sphot.data
+.. automodule:: sphot.aperture
    :members:
    :undoc-members:
    :show-inheritance:

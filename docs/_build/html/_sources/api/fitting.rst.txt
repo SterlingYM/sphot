@@ -1,4 +1,4 @@
-Fitting
+Sersic model fitting
 =================
 
 .. automodule:: sphot.fitting

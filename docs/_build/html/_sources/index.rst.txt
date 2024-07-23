@@ -27,6 +27,9 @@ This documentation is under development. Stay tuned!
    api/data
    api/plotting
    api/fitting
+   api/psf
+   api/aperture
+   api/utils
 
 Indices and tables
 ==================

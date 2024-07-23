@@ -1,7 +1,7 @@
-Data objects
+PSF photometry
 =================
 
-.. automodule:: sphot.data
+.. automodule:: sphot.psf
    :members:
    :undoc-members:
    :show-inheritance:

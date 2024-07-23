@@ -49,9 +49,12 @@
 <p class="caption" role="heading"><span class="caption-text">API documentation</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="api/core.html">Core</a></li>
-<li class="toctree-l1"><a class="reference internal" href="api/data.html">Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/data.html">Data objects</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/plotting.html">Plotting</a></li>
-<li class="toctree-l1"><a class="reference internal" href="api/fitting.html">Fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/fitting.html">Sersic model fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/psf.html">PSF photometry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/aperture.html">Aperture photometry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/utils.html">Utilities</a></li>
 </ul>
 
         </div>
@@ -128,14 +131,24 @@
 </li>
       </ul></li>
       <li><a href="api/data.html#sphot.data.calc_mag">calc_mag() (in module sphot.data)</a>
+
+      <ul>
+        <li><a href="api/aperture.html#sphot.aperture.CutoutDataPhotometry.calc_mag">(sphot.aperture.CutoutDataPhotometry method)</a>
+</li>
+      </ul></li>
+      <li><a href="api/aperture.html#sphot.aperture.IsoPhotApertures.calc_petrosian_indices">calc_petrosian_indices() (sphot.aperture.IsoPhotApertures method)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/data.html#sphot.data.CutoutData.calc_psf_sigma">calc_psf_sigma() (sphot.data.CutoutData method)</a>
 </li>
+      <li><a href="api/aperture.html#sphot.aperture.IsoPhotApertures.create_apertures">create_apertures() (sphot.aperture.IsoPhotApertures method)</a>
+</li>
       <li><a href="api/data.html#sphot.data.MultiBandCutout.crop_in">crop_in() (sphot.data.MultiBandCutout method)</a>
 </li>
       <li><a href="api/data.html#sphot.data.CutoutData">CutoutData (class in sphot.data)</a>
+</li>
+      <li><a href="api/aperture.html#sphot.aperture.CutoutDataPhotometry">CutoutDataPhotometry (class in sphot.aperture)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -153,6 +166,8 @@
 </li>
       <li><a href="api/fitting.html#sphot.fitting.do_aperture_photometry">do_aperture_photometry() (in module sphot.fitting)</a>
 </li>
+      <li><a href="api/psf.html#sphot.psf.do_psf_photometry">do_psf_photometry() (in module sphot.psf)</a>
+</li>
   </ul></td>
 </tr></table>
 
@@ -167,10 +182,14 @@
 <h2 id="F">F</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/psf.html#sphot.psf.filter_psfphot_results">filter_psfphot_results() (in module sphot.psf)</a>
+</li>
       <li><a href="api/fitting.html#sphot.fitting.ModelFitter.fit">fit() (sphot.fitting.ModelFitter method)</a>
 
       <ul>
         <li><a href="api/fitting.html#sphot.fitting.ModelScaleFitter.fit">(sphot.fitting.ModelScaleFitter method)</a>
+</li>
+        <li><a href="api/psf.html#sphot.psf.PSFFitter.fit">(sphot.psf.PSFFitter method)</a>
 </li>
       </ul></li>
   </ul></td>
@@ -185,10 +204,12 @@
 <h2 id="G">G</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/fitting.html#sphot.fitting.SphotModel.get_bounds">get_bounds() (sphot.fitting.SphotModel method)</a>
+      <li><a href="api/aperture.html#sphot.aperture.IsoPhotApertures.get_aper_at">get_aper_at() (sphot.aperture.IsoPhotApertures method)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/fitting.html#sphot.fitting.SphotModel.get_bounds">get_bounds() (sphot.fitting.SphotModel method)</a>
+</li>
       <li><a href="api/data.html#sphot.data.get_data_annulus">get_data_annulus() (in module sphot.data)</a>
 </li>
   </ul></td>
@@ -201,13 +222,17 @@
 </li>
       <li><a href="api/data.html#sphot.data.MultiBandCutout.image_list">image_list (sphot.data.MultiBandCutout property)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/data.html#sphot.data.MultiBandCutout.images">images (sphot.data.MultiBandCutout property)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/data.html#sphot.data.CutoutData.init_size_guess">init_size_guess() (sphot.data.CutoutData method)</a>
 </li>
+      <li><a href="api/aperture.html#sphot.aperture.IsoPhotApertures">IsoPhotApertures (class in sphot.aperture)</a>
+</li>
       <li><a href="api/fitting.html#sphot.fitting.iterative_NM">iterative_NM() (in module sphot.fitting)</a>
+</li>
+      <li><a href="api/psf.html#sphot.psf.iterative_psf_fitting">iterative_psf_fitting() (in module sphot.psf)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -219,6 +244,8 @@
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/utils.html#sphot.utils.load_and_crop">load_and_crop() (in module sphot.utils)</a>
+</li>
       <li><a href="api/data.html#sphot.data.load_h5data">load_h5data() (in module sphot.data)</a>
 </li>
   </ul></td>
@@ -231,14 +258,28 @@
 </li>
       <li><a href="api/fitting.html#sphot.fitting.make_aperture">make_aperture() (in module sphot.fitting)</a>
 </li>
+      <li><a href="api/psf.html#sphot.psf.make_modelimg">make_modelimg() (in module sphot.psf)</a>
+</li>
+      <li><a href="api/aperture.html#sphot.aperture.CutoutDataPhotometry.measure_flux">measure_flux() (sphot.aperture.CutoutDataPhotometry method)</a>
+
+      <ul>
+        <li><a href="api/aperture.html#sphot.aperture.IsoPhotApertures.measure_flux">(sphot.aperture.IsoPhotApertures method)</a>
+</li>
+      </ul></li>
+      <li><a href="api/aperture.html#sphot.aperture.CutoutDataPhotometry.measure_sky">measure_sky() (sphot.aperture.CutoutDataPhotometry method)</a>
+</li>
       <li><a href="api/fitting.html#sphot.fitting.ModelFitter">ModelFitter (class in sphot.fitting)</a>
 </li>
       <li><a href="api/fitting.html#sphot.fitting.ModelScaleFitter">ModelScaleFitter (class in sphot.fitting)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li>
     module
 
       <ul>
+        <li><a href="api/aperture.html#module-sphot.aperture">sphot.aperture</a>
+</li>
         <li><a href="api/core.html#module-sphot.core">sphot.core</a>
 </li>
         <li><a href="api/data.html#module-sphot.data">sphot.data</a>
@@ -247,9 +288,11 @@
 </li>
         <li><a href="api/plotting.html#module-sphot.plotting">sphot.plotting</a>
 </li>
+        <li><a href="api/psf.html#module-sphot.psf">sphot.psf</a>
+</li>
+        <li><a href="api/utils.html#module-sphot.utils">sphot.utils</a>
+</li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/data.html#sphot.data.MultiBandCutout">MultiBandCutout (class in sphot.data)</a>
 </li>
   </ul></td>
@@ -262,9 +305,13 @@
 </li>
       <li><a href="api/data.html#sphot.data.CutoutData.perform_bkg_stats">perform_bkg_stats() (sphot.data.CutoutData method)</a>
 </li>
-      <li><a href="api/data.html#sphot.data.CutoutData.plot">plot() (sphot.data.CutoutData method)</a>
+      <li><a href="api/aperture.html#sphot.aperture.CutoutDataPhotometry.plot">plot() (sphot.aperture.CutoutDataPhotometry method)</a>
 
       <ul>
+        <li><a href="api/aperture.html#sphot.aperture.IsoPhotApertures.plot">(sphot.aperture.IsoPhotApertures method)</a>
+</li>
+        <li><a href="api/data.html#sphot.data.CutoutData.plot">(sphot.data.CutoutData method)</a>
+</li>
         <li><a href="api/data.html#sphot.data.MultiBandCutout.plot">(sphot.data.MultiBandCutout method)</a>
 </li>
       </ul></li>
@@ -278,9 +325,15 @@
 </li>
       <li><a href="api/plotting.html#sphot.plotting.plot_sphot_results">plot_sphot_results() (in module sphot.plotting)</a>
 </li>
+      <li><a href="api/utils.html#sphot.utils.prep_model">prep_model() (in module sphot.utils)</a>
+</li>
+      <li><a href="api/aperture.html#sphot.aperture.prepare_blurring_kernel">prepare_blurring_kernel() (in module sphot.aperture)</a>
+</li>
       <li><a href="api/fitting.html#sphot.fitting.profile_stats">profile_stats() (in module sphot.fitting)</a>
 </li>
       <li><a href="api/fitting.html#sphot.fitting.ProfileStats">ProfileStats (class in sphot.fitting)</a>
+</li>
+      <li><a href="api/psf.html#sphot.psf.PSFFitter">PSFFitter (class in sphot.psf)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -318,6 +371,15 @@
 </li>
       <li><a href="api/core.html#sphot.core.showprogress">showprogress() (in module sphot.core)</a>
 </li>
+      <li><a href="api/psf.html#sphot.psf.sigma_clip_outside_aperture">sigma_clip_outside_aperture() (in module sphot.psf)</a>
+</li>
+      <li>
+    sphot.aperture
+
+      <ul>
+        <li><a href="api/aperture.html#module-sphot.aperture">module</a>
+</li>
+      </ul></li>
       <li>
     sphot.core
 
@@ -325,8 +387,6 @@
         <li><a href="api/core.html#module-sphot.core">module</a>
 </li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li>
     sphot.data
 
@@ -334,6 +394,8 @@
         <li><a href="api/data.html#module-sphot.data">module</a>
 </li>
       </ul></li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li>
     sphot.fitting
 
@@ -346,6 +408,20 @@
 
       <ul>
         <li><a href="api/plotting.html#module-sphot.plotting">module</a>
+</li>
+      </ul></li>
+      <li>
+    sphot.psf
+
+      <ul>
+        <li><a href="api/psf.html#module-sphot.psf">module</a>
+</li>
+      </ul></li>
+      <li>
+    sphot.utils
+
+      <ul>
+        <li><a href="api/utils.html#module-sphot.utils">module</a>
 </li>
       </ul></li>
       <li><a href="api/fitting.html#sphot.fitting.SphotModel">SphotModel (class in sphot.fitting)</a>

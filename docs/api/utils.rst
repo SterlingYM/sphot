@@ -1,7 +1,7 @@
-Data objects
+Utilities
 =================
 
-.. automodule:: sphot.data
+.. automodule:: sphot.utils
    :members:
    :undoc-members:
    :show-inheritance:

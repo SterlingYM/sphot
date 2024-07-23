@@ -53,9 +53,12 @@
 <p class="caption" role="heading"><span class="caption-text">API documentation</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="api/core.html">Core</a></li>
-<li class="toctree-l1"><a class="reference internal" href="api/data.html">Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/data.html">Data objects</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/plotting.html">Plotting</a></li>
-<li class="toctree-l1"><a class="reference internal" href="api/fitting.html">Fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/fitting.html">Sersic model fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/psf.html">PSF photometry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/aperture.html">Aperture photometry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/utils.html">Utilities</a></li>
 </ul>
 
         </div>
@@ -105,7 +108,7 @@
 <li class="toctree-l2"><a class="reference internal" href="api/core.html#sphot.core.showprogress"><code class="docutils literal notranslate"><span class="pre">showprogress()</span></code></a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="api/data.html">Data</a><ul>
+<li class="toctree-l1"><a class="reference internal" href="api/data.html">Data objects</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="api/data.html#sphot.data.CutoutData"><code class="docutils literal notranslate"><span class="pre">CutoutData</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/data.html#sphot.data.DebugException"><code class="docutils literal notranslate"><span class="pre">DebugException</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/data.html#sphot.data.MultiBandCutout"><code class="docutils literal notranslate"><span class="pre">MultiBandCutout</span></code></a></li>
@@ -124,7 +127,7 @@
 <li class="toctree-l2"><a class="reference internal" href="api/plotting.html#sphot.plotting.plot_sphot_results"><code class="docutils literal notranslate"><span class="pre">plot_sphot_results()</span></code></a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="api/fitting.html">Fitting</a><ul>
+<li class="toctree-l1"><a class="reference internal" href="api/fitting.html">Sersic model fitting</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="api/fitting.html#sphot.fitting.ModelFitter"><code class="docutils literal notranslate"><span class="pre">ModelFitter</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/fitting.html#sphot.fitting.ModelScaleFitter"><code class="docutils literal notranslate"><span class="pre">ModelScaleFitter</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/fitting.html#sphot.fitting.ProfileStats"><code class="docutils literal notranslate"><span class="pre">ProfileStats</span></code></a></li>
@@ -136,6 +139,26 @@
 <li class="toctree-l2"><a class="reference internal" href="api/fitting.html#sphot.fitting.profile_stats"><code class="docutils literal notranslate"><span class="pre">profile_stats()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/fitting.html#sphot.fitting.save_bestfit_params"><code class="docutils literal notranslate"><span class="pre">save_bestfit_params()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/fitting.html#sphot.fitting.triple_annealing"><code class="docutils literal notranslate"><span class="pre">triple_annealing()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="api/psf.html">PSF photometry</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="api/psf.html#sphot.psf.PSFFitter"><code class="docutils literal notranslate"><span class="pre">PSFFitter</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/psf.html#sphot.psf.do_psf_photometry"><code class="docutils literal notranslate"><span class="pre">do_psf_photometry()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/psf.html#sphot.psf.filter_psfphot_results"><code class="docutils literal notranslate"><span class="pre">filter_psfphot_results()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/psf.html#sphot.psf.iterative_psf_fitting"><code class="docutils literal notranslate"><span class="pre">iterative_psf_fitting()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/psf.html#sphot.psf.make_modelimg"><code class="docutils literal notranslate"><span class="pre">make_modelimg()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/psf.html#sphot.psf.sigma_clip_outside_aperture"><code class="docutils literal notranslate"><span class="pre">sigma_clip_outside_aperture()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="api/aperture.html">Aperture photometry</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="api/aperture.html#sphot.aperture.CutoutDataPhotometry"><code class="docutils literal notranslate"><span class="pre">CutoutDataPhotometry</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/aperture.html#sphot.aperture.IsoPhotApertures"><code class="docutils literal notranslate"><span class="pre">IsoPhotApertures</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/aperture.html#sphot.aperture.prepare_blurring_kernel"><code class="docutils literal notranslate"><span class="pre">prepare_blurring_kernel()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="api/utils.html">Utilities</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="api/utils.html#sphot.utils.load_and_crop"><code class="docutils literal notranslate"><span class="pre">load_and_crop()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/utils.html#sphot.utils.prep_model"><code class="docutils literal notranslate"><span class="pre">prep_model()</span></code></a></li>
 </ul>
 </li>
 </ul>
