@@ -6,7 +6,12 @@
 Welcome to Sphot's documentation!
 =================================
 
-This is a welcome text. Hi.
+.. image:: images/sample.jpg
+   :alt: Example image
+   :width: 100%
+   :align: center
+
+This documentation is under development. Stay tuned!
 
 .. toctree::
    :maxdepth: 2
