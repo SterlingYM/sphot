@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="python" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fitting &mdash; Sphot  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../_static/documentation_options.js?v=d048f138"></script>
+        <script src="../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="prev" title="Plotting" href="plotting.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            Sphot
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../notebooks/tutorial.html">Sphot tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API documentation</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="core.html">Core</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data.html">Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="plotting.html">Plotting</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Fitting</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#sphot.fitting.ModelFitter"><code class="docutils literal notranslate"><span class="pre">ModelFitter</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.fitting.ModelFitter.calc_chi2"><code class="docutils literal notranslate"><span class="pre">ModelFitter.calc_chi2()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.fitting.ModelFitter.eval_model"><code class="docutils literal notranslate"><span class="pre">ModelFitter.eval_model()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.fitting.ModelFitter.fit"><code class="docutils literal notranslate"><span class="pre">ModelFitter.fit()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.fitting.ModelFitter.standardize_params"><code class="docutils literal notranslate"><span class="pre">ModelFitter.standardize_params()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.fitting.ModelFitter.unstandardize_params"><code class="docutils literal notranslate"><span class="pre">ModelFitter.unstandardize_params()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#sphot.fitting.ModelScaleFitter"><code class="docutils literal notranslate"><span class="pre">ModelScaleFitter</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.fitting.ModelScaleFitter.calc_chi2"><code class="docutils literal notranslate"><span class="pre">ModelScaleFitter.calc_chi2()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.fitting.ModelScaleFitter.fit"><code class="docutils literal notranslate"><span class="pre">ModelScaleFitter.fit()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.fitting.ModelScaleFitter.scale_params"><code class="docutils literal notranslate"><span class="pre">ModelScaleFitter.scale_params()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#sphot.fitting.ProfileStats"><code class="docutils literal notranslate"><span class="pre">ProfileStats</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.fitting.ProfileStats.plot_profile"><code class="docutils literal notranslate"><span class="pre">ProfileStats.plot_profile()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#sphot.fitting.SphotModel"><code class="docutils literal notranslate"><span class="pre">SphotModel</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.fitting.SphotModel.get_bounds"><code class="docutils literal notranslate"><span class="pre">SphotModel.get_bounds()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.fitting.SphotModel.list_to_params"><code class="docutils literal notranslate"><span class="pre">SphotModel.list_to_params()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.fitting.SphotModel.parse_params"><code class="docutils literal notranslate"><span class="pre">SphotModel.parse_params()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.fitting.SphotModel.set_conditions"><code class="docutils literal notranslate"><span class="pre">SphotModel.set_conditions()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.fitting.SphotModel.set_fixed_params"><code class="docutils literal notranslate"><span class="pre">SphotModel.set_fixed_params()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#sphot.fitting.do_aperture_photometry"><code class="docutils literal notranslate"><span class="pre">do_aperture_photometry()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#sphot.fitting.iterative_NM"><code class="docutils literal notranslate"><span class="pre">iterative_NM()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#sphot.fitting.make_annulus"><code class="docutils literal notranslate"><span class="pre">make_annulus()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#sphot.fitting.make_aperture"><code class="docutils literal notranslate"><span class="pre">make_aperture()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#sphot.fitting.profile_stats"><code class="docutils literal notranslate"><span class="pre">profile_stats()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#sphot.fitting.save_bestfit_params"><code class="docutils literal notranslate"><span class="pre">save_bestfit_params()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#sphot.fitting.triple_annealing"><code class="docutils literal notranslate"><span class="pre">triple_annealing()</span></code></a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Sphot</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Fitting</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/fitting.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-sphot.fitting">
+<span id="fitting"></span><h1>Fitting<a class="headerlink" href="#module-sphot.fitting" title="Link to this heading"></a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="sphot.fitting.ModelFitter">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">sphot.fitting.</span></span><span class="sig-name descname"><span class="pre">ModelFitter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cutoutdata</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.ModelFitter" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.fitting.ModelFitter.calc_chi2">
+<span class="sig-name descname"><span class="pre">calc_chi2</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">standardized_params</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">iterinfo</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">print_val</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">chi2_min_allowed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-10</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.ModelFitter.calc_chi2" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.fitting.ModelFitter.eval_model">
+<span class="sig-name descname"><span class="pre">eval_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">standardized_params</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.ModelFitter.eval_model" title="Link to this definition"></a></dt>
+<dd><p>render the model image based on the given parameters</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.fitting.ModelFitter.fit">
+<span class="sig-name descname"><span class="pre">fit</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'iterative_NM'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fit_to</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'data'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.ModelFitter.fit" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.fitting.ModelFitter.standardize_params">
+<span class="sig-name descname"><span class="pre">standardize_params</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">params</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.ModelFitter.standardize_params" title="Link to this definition"></a></dt>
+<dd><p>normalize parameters to be between 0 and 1</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.fitting.ModelFitter.unstandardize_params">
+<span class="sig-name descname"><span class="pre">unstandardize_params</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">params</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.ModelFitter.unstandardize_params" title="Link to this definition"></a></dt>
+<dd><p>convert back normalized parameters to the physical scale</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="sphot.fitting.ModelScaleFitter">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">sphot.fitting.</span></span><span class="sig-name descname"><span class="pre">ModelScaleFitter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cutoutdata</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">base_params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.ModelScaleFitter" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#sphot.fitting.ModelFitter" title="sphot.fitting.ModelFitter"><code class="xref py py-class docutils literal notranslate"><span class="pre">ModelFitter</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.fitting.ModelScaleFitter.calc_chi2">
+<span class="sig-name descname"><span class="pre">calc_chi2</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">flux_scale</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">iterinfo</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">print_val</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">chi2_min_allowed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-10</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.ModelScaleFitter.calc_chi2" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.fitting.ModelScaleFitter.fit">
+<span class="sig-name descname"><span class="pre">fit</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'iterative_NM'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fit_to</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'data'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.ModelScaleFitter.fit" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.fitting.ModelScaleFitter.scale_params">
+<span class="sig-name descname"><span class="pre">scale_params</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">flux_scale</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.ModelScaleFitter.scale_params" title="Link to this definition"></a></dt>
+<dd><p>a helper function to scale the parameters based on the flux scale</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="sphot.fitting.ProfileStats">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">sphot.fitting.</span></span><span class="sig-name descname"><span class="pre">ProfileStats</span></span><a class="headerlink" href="#sphot.fitting.ProfileStats" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.fitting.ProfileStats.plot_profile">
+<span class="sig-name descname"><span class="pre">plot_profile</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.ProfileStats.plot_profile" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="sphot.fitting.SphotModel">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">sphot.fitting.</span></span><span class="sig-name descname"><span class="pre">SphotModel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cutoutdata</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.SphotModel" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">PSFConvolvedModel2D</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.fitting.SphotModel.get_bounds">
+<span class="sig-name descname"><span class="pre">get_bounds</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.SphotModel.get_bounds" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.fitting.SphotModel.list_to_params">
+<span class="sig-name descname"><span class="pre">list_to_params</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.SphotModel.list_to_params" title="Link to this definition"></a></dt>
+<dd><p>convert a list of free parameters to the full model parameter array</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.fitting.SphotModel.parse_params">
+<span class="sig-name descname"><span class="pre">parse_params</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.SphotModel.parse_params" title="Link to this definition"></a></dt>
+<dd><p>a helper function to parse coordinates to all relevant sub-models.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.fitting.SphotModel.set_conditions">
+<span class="sig-name descname"><span class="pre">set_conditions</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">list_of_conditions</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.SphotModel.set_conditions" title="Link to this definition"></a></dt>
+<dd><p>set condition functions.
+:param list_of_conditions: list of conditions, each as a 2-tuple. Each tuple is evaluated so that (a,b) is True if a &gt;= b.
+:type list_of_conditions: list of 2-tuple
+:param Inside the tuple can be either the parameter name or numerical value. For example:
+:type Inside the tuple can be either the parameter name or numerical value. For example: 'r_eff',10),('r_eff_1','r_eff_0')] means that it returns True if (r_eff &gt;= 10 AND r_eff_1 &gt;= r_eff_0
+:param [:
+:type [: 'r_eff',10),('r_eff_1','r_eff_0')] means that it returns True if (r_eff &gt;= 10 AND r_eff_1 &gt;= r_eff_0</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.fitting.SphotModel.set_fixed_params">
+<span class="sig-name descname"><span class="pre">set_fixed_params</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fixed_params</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.SphotModel.set_fixed_params" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="sphot.fitting.do_aperture_photometry">
+<span class="sig-prename descclassname"><span class="pre">sphot.fitting.</span></span><span class="sig-name descname"><span class="pre">do_aperture_photometry</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">stats</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">aperture_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">annulus_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[3,</span> <span class="pre">6]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">multi_sersic_index</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ax</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.do_aperture_photometry" title="Link to this definition"></a></dt>
+<dd><p>perform aperture photometry</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="sphot.fitting.iterative_NM">
+<span class="sig-prename descclassname"><span class="pre">sphot.fitting.</span></span><span class="sig-name descname"><span class="pre">iterative_NM</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">func</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">x0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bounds</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rtol_init</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.001</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rtol_iter</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0001</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rtol_convergence</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-06</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xrtol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_iter</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">20</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">maxfev_eachiter</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">progress</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">progress_text</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'Running</span> <span class="pre">iNM...'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.iterative_NM" title="Link to this definition"></a></dt>
+<dd><p>Iterative Nelder-Mead minimization.
+The original implementation by Scipy tends to miss the global minimum.
+Rather than setting the tolerance to be small, the success rate tends to be higher
+when the tolerance is set to be larger and the minimization is run multiple times.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="sphot.fitting.make_annulus">
+<span class="sig-prename descclassname"><span class="pre">sphot.fitting.</span></span><span class="sig-name descname"><span class="pre">make_annulus</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bestfit_params_physical</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">a_in</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">a_out</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">multi_sersic_index</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.make_annulus" title="Link to this definition"></a></dt>
+<dd><p>create annulus</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="sphot.fitting.make_aperture">
+<span class="sig-prename descclassname"><span class="pre">sphot.fitting.</span></span><span class="sig-name descname"><span class="pre">make_aperture</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bestfit_params_physical</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">a</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">multi_sersic_index</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.make_aperture" title="Link to this definition"></a></dt>
+<dd><p>create aperture</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="sphot.fitting.profile_stats">
+<span class="sig-prename descclassname"><span class="pre">sphot.fitting.</span></span><span class="sig-name descname"><span class="pre">profile_stats</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cutoutdata</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fit_to</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'psf_sub_data'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sersic_params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_size_relative</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">6</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">interval_relative</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">radius_param_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'r_eff_0'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">multi_sersic_index</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.profile_stats" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="sphot.fitting.save_bestfit_params">
+<span class="sig-prename descclassname"><span class="pre">sphot.fitting.</span></span><span class="sig-name descname"><span class="pre">save_bestfit_params</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cutoutdata</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bestfit_sersic_params_physical</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.save_bestfit_params" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="sphot.fitting.triple_annealing">
+<span class="sig-prename descclassname"><span class="pre">sphot.fitting.</span></span><span class="sig-name descname"><span class="pre">triple_annealing</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">func</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">args</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">()</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">x0</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bounds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_iter</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.triple_annealing" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="plotting.html" class="btn btn-neutral float-left" title="Plotting" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Y.S.Murakami.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

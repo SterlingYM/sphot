@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="python" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Data &mdash; Sphot  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../_static/documentation_options.js?v=d048f138"></script>
+        <script src="../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Plotting" href="plotting.html" />
+    <link rel="prev" title="Core" href="core.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            Sphot
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../notebooks/tutorial.html">Sphot tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API documentation</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="core.html">Core</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Data</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#sphot.data.CutoutData"><code class="docutils literal notranslate"><span class="pre">CutoutData</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.data.CutoutData.blur_psf"><code class="docutils literal notranslate"><span class="pre">CutoutData.blur_psf()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.data.CutoutData.calc_psf_sigma"><code class="docutils literal notranslate"><span class="pre">CutoutData.calc_psf_sigma()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.data.CutoutData.determine_psf_blurring"><code class="docutils literal notranslate"><span class="pre">CutoutData.determine_psf_blurring()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.data.CutoutData.fit_sky"><code class="docutils literal notranslate"><span class="pre">CutoutData.fit_sky()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.data.CutoutData.fix_psf"><code class="docutils literal notranslate"><span class="pre">CutoutData.fix_psf()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.data.CutoutData.init_size_guess"><code class="docutils literal notranslate"><span class="pre">CutoutData.init_size_guess()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.data.CutoutData.perform_bkg_stats"><code class="docutils literal notranslate"><span class="pre">CutoutData.perform_bkg_stats()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.data.CutoutData.plot"><code class="docutils literal notranslate"><span class="pre">CutoutData.plot()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.data.CutoutData.remove_bkg"><code class="docutils literal notranslate"><span class="pre">CutoutData.remove_bkg()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.data.CutoutData.remove_sky"><code class="docutils literal notranslate"><span class="pre">CutoutData.remove_sky()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#sphot.data.DebugException"><code class="docutils literal notranslate"><span class="pre">DebugException</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#sphot.data.MultiBandCutout"><code class="docutils literal notranslate"><span class="pre">MultiBandCutout</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.data.MultiBandCutout.add_image"><code class="docutils literal notranslate"><span class="pre">MultiBandCutout.add_image()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.data.MultiBandCutout.crop_in"><code class="docutils literal notranslate"><span class="pre">MultiBandCutout.crop_in()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.data.MultiBandCutout.image_list"><code class="docutils literal notranslate"><span class="pre">MultiBandCutout.image_list</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.data.MultiBandCutout.images"><code class="docutils literal notranslate"><span class="pre">MultiBandCutout.images</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.data.MultiBandCutout.plot"><code class="docutils literal notranslate"><span class="pre">MultiBandCutout.plot()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sphot.data.MultiBandCutout.save"><code class="docutils literal notranslate"><span class="pre">MultiBandCutout.save()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#sphot.data.calc_mag"><code class="docutils literal notranslate"><span class="pre">calc_mag()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#sphot.data.decode_if_bytestring"><code class="docutils literal notranslate"><span class="pre">decode_if_bytestring()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#sphot.data.get_data_annulus"><code class="docutils literal notranslate"><span class="pre">get_data_annulus()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#sphot.data.load_h5data"><code class="docutils literal notranslate"><span class="pre">load_h5data()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#sphot.data.read_sphot_h5"><code class="docutils literal notranslate"><span class="pre">read_sphot_h5()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#sphot.data.str_to_json"><code class="docutils literal notranslate"><span class="pre">str_to_json()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="plotting.html">Plotting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fitting.html">Fitting</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Sphot</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Data</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/data.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-sphot.data">
+<span id="data"></span><h1>Data<a class="headerlink" href="#module-sphot.data" title="Link to this heading"></a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="sphot.data.CutoutData">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">sphot.data.</span></span><span class="sig-name descname"><span class="pre">CutoutData</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">psf</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">psf_oversample</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filtername</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.CutoutData" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.data.CutoutData.blur_psf">
+<span class="sig-name descname"><span class="pre">blur_psf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">psf_blurring</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.CutoutData.blur_psf" title="Link to this definition"></a></dt>
+<dd><p>blur the PSF</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.data.CutoutData.calc_psf_sigma">
+<span class="sig-name descname"><span class="pre">calc_psf_sigma</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.CutoutData.calc_psf_sigma" title="Link to this definition"></a></dt>
+<dd><p>estimate Gaussian sigma-equivalent size of the PSF</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.data.CutoutData.determine_psf_blurring">
+<span class="sig-name descname"><span class="pre">determine_psf_blurring</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.CutoutData.determine_psf_blurring" title="Link to this definition"></a></dt>
+<dd><p>determine the best PSF blurring value based on the number of stars detected</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.data.CutoutData.fit_sky">
+<span class="sig-name descname"><span class="pre">fit_sky</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fit_to</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'residual_masked'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">poly_deg</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">radius_in</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">7</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">width</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">7</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.CutoutData.fit_sky" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.data.CutoutData.fix_psf">
+<span class="sig-name descname"><span class="pre">fix_psf</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.CutoutData.fix_psf" title="Link to this definition"></a></dt>
+<dd><p>make sure the sum of PSF is 1</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.data.CutoutData.init_size_guess">
+<span class="sig-name descname"><span class="pre">init_size_guess</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sigma_guess</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">center_slack</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sigma_kernel</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">clip_lower_counts_percentile</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.CutoutData.init_size_guess" title="Link to this definition"></a></dt>
+<dd><p>roughly estimate the effective radius using Gaussian profile.
+:param sigma_guess: initial guess for the standard deviation of the Gaussian profile (in pixels)
+:type sigma_guess: float
+:param center_slack: the fraction of the image size (from center) within which the center of the galaxy is expected. Default is 5%
+:type center_slack: float</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>rough estimate of the effective radius (in pixels)</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>float</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.data.CutoutData.perform_bkg_stats">
+<span class="sig-name descname"><span class="pre">perform_bkg_stats</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">plot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.CutoutData.perform_bkg_stats" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.data.CutoutData.plot">
+<span class="sig-name descname"><span class="pre">plot</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.CutoutData.plot" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.data.CutoutData.remove_bkg">
+<span class="sig-name descname"><span class="pre">remove_bkg</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bkg_level</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.CutoutData.remove_bkg" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.data.CutoutData.remove_sky">
+<span class="sig-name descname"><span class="pre">remove_sky</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fit_to</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'residual_masked'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">remove_from</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'psf_sub_data'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.CutoutData.remove_sky" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="sphot.data.DebugException">
+<em class="property"><span class="pre">exception</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">sphot.data.</span></span><span class="sig-name descname"><span class="pre">DebugException</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">message</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">debug_var</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.DebugException" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Exception</span></code></p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="sphot.data.MultiBandCutout">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">sphot.data.</span></span><span class="sig-name descname"><span class="pre">MultiBandCutout</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.MultiBandCutout" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>a container for CutoutData</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.data.MultiBandCutout.add_image">
+<span class="sig-name descname"><span class="pre">add_image</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filtername</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.MultiBandCutout.add_image" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.data.MultiBandCutout.crop_in">
+<span class="sig-name descname"><span class="pre">crop_in</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">size</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.MultiBandCutout.crop_in" title="Link to this definition"></a></dt>
+<dd><p>crop-in and re-generate the MultiBandCutout object
+:param multiband_obj: the object to crop in
+:type multiband_obj: MultiBandCutout
+:param x0: the center of the new image
+:type x0: float
+:param y0: the center of the new image
+:type y0: float
+:param size: the size of the new image (in pixels)
+:type size: int</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>the cropped object</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>galaxy_crop (<a class="reference internal" href="#sphot.data.MultiBandCutout" title="sphot.data.MultiBandCutout">MultiBandCutout</a>)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="sphot.data.MultiBandCutout.image_list">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">image_list</span></span><a class="headerlink" href="#sphot.data.MultiBandCutout.image_list" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="sphot.data.MultiBandCutout.images">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">images</span></span><a class="headerlink" href="#sphot.data.MultiBandCutout.images" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.data.MultiBandCutout.plot">
+<span class="sig-name descname"><span class="pre">plot</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">attr</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'data'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">title</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.MultiBandCutout.plot" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sphot.data.MultiBandCutout.save">
+<span class="sig-name descname"><span class="pre">save</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filepath</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.MultiBandCutout.save" title="Link to this definition"></a></dt>
+<dd><p>save the MultiBandCutout object to a h5 file</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="sphot.data.calc_mag">
+<span class="sig-prename descclassname"><span class="pre">sphot.data.</span></span><span class="sig-name descname"><span class="pre">calc_mag</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">counts_Mjy_per_Sr</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">errors_Mjy_per_Sr</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pixel_scale</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.03</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.calc_mag" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="sphot.data.decode_if_bytestring">
+<span class="sig-prename descclassname"><span class="pre">sphot.data.</span></span><span class="sig-name descname"><span class="pre">decode_if_bytestring</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">val</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.decode_if_bytestring" title="Link to this definition"></a></dt>
+<dd><p>reverse of str_to_json</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="sphot.data.get_data_annulus">
+<span class="sig-prename descclassname"><span class="pre">sphot.data.</span></span><span class="sig-name descname"><span class="pre">get_data_annulus</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">aper_r</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flatten</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.get_data_annulus" title="Link to this definition"></a></dt>
+<dd><p>extract flattened data outside the annulus</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="sphot.data.load_h5data">
+<span class="sig-prename descclassname"><span class="pre">sphot.data.</span></span><span class="sig-name descname"><span class="pre">load_h5data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filepath</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filters</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">PSFs_dict</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">psf_oversample</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.load_h5data" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="sphot.data.read_sphot_h5">
+<span class="sig-prename descclassname"><span class="pre">sphot.data.</span></span><span class="sig-name descname"><span class="pre">read_sphot_h5</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filepath</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.read_sphot_h5" title="Link to this definition"></a></dt>
+<dd><p>load h5 file to sphot objects</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="sphot.data.str_to_json">
+<span class="sig-prename descclassname"><span class="pre">sphot.data.</span></span><span class="sig-name descname"><span class="pre">str_to_json</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">s</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.data.str_to_json" title="Link to this definition"></a></dt>
+<dd><p>encode string to json-readable format.
+This is a helper function for saving h5 files.</p>
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="core.html" class="btn btn-neutral float-left" title="Core" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="plotting.html" class="btn btn-neutral float-right" title="Plotting" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Y.S.Murakami.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
