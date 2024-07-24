@@ -73,14 +73,6 @@
 <li class="toctree-l3"><a class="reference internal" href="#sphot.fitting.ProfileStats.plot_profile"><code class="docutils literal notranslate"><span class="pre">ProfileStats.plot_profile()</span></code></a></li>
 </ul>
 </li>
-<li class="toctree-l2"><a class="reference internal" href="#sphot.fitting.SphotModel"><code class="docutils literal notranslate"><span class="pre">SphotModel</span></code></a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#sphot.fitting.SphotModel.get_bounds"><code class="docutils literal notranslate"><span class="pre">SphotModel.get_bounds()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#sphot.fitting.SphotModel.list_to_params"><code class="docutils literal notranslate"><span class="pre">SphotModel.list_to_params()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#sphot.fitting.SphotModel.parse_params"><code class="docutils literal notranslate"><span class="pre">SphotModel.parse_params()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#sphot.fitting.SphotModel.set_conditions"><code class="docutils literal notranslate"><span class="pre">SphotModel.set_conditions()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#sphot.fitting.SphotModel.set_fixed_params"><code class="docutils literal notranslate"><span class="pre">SphotModel.set_fixed_params()</span></code></a></li>
-</ul>
-</li>
 <li class="toctree-l2"><a class="reference internal" href="#sphot.fitting.do_aperture_photometry"><code class="docutils literal notranslate"><span class="pre">do_aperture_photometry()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="#sphot.fitting.iterative_NM"><code class="docutils literal notranslate"><span class="pre">iterative_NM()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="#sphot.fitting.make_annulus"><code class="docutils literal notranslate"><span class="pre">make_annulus()</span></code></a></li>
@@ -125,6 +117,7 @@
 <dt class="sig sig-object py" id="sphot.fitting.ModelFitter">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">sphot.fitting.</span></span><span class="sig-name descname"><span class="pre">ModelFitter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cutoutdata</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.ModelFitter" title="Link to this definition"></a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>A fitter class to perform Sersic model fitting to data.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="sphot.fitting.ModelFitter.calc_chi2">
 <span class="sig-name descname"><span class="pre">calc_chi2</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">standardized_params</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">iterinfo</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">print_val</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">chi2_min_allowed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-10</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.ModelFitter.calc_chi2" title="Link to this definition"></a></dt>
@@ -144,7 +137,7 @@
 <dl class="py method">
 <dt class="sig sig-object py" id="sphot.fitting.ModelFitter.standardize_params">
 <span class="sig-name descname"><span class="pre">standardize_params</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">params</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.ModelFitter.standardize_params" title="Link to this definition"></a></dt>
-<dd><p>normalize parameters to be between 0 and 1</p>
+<dd><p>normalize parameters to be between 0 and 1.</p>
 </dd></dl>
 
 <dl class="py method">
@@ -184,46 +177,6 @@
 <dl class="py method">
 <dt class="sig sig-object py" id="sphot.fitting.ProfileStats.plot_profile">
 <span class="sig-name descname"><span class="pre">plot_profile</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.ProfileStats.plot_profile" title="Link to this definition"></a></dt>
-<dd></dd></dl>
-
-</dd></dl>
-
-<dl class="py class">
-<dt class="sig sig-object py" id="sphot.fitting.SphotModel">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">sphot.fitting.</span></span><span class="sig-name descname"><span class="pre">SphotModel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cutoutdata</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.SphotModel" title="Link to this definition"></a></dt>
-<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">PSFConvolvedModel2D</span></code></p>
-<dl class="py method">
-<dt class="sig sig-object py" id="sphot.fitting.SphotModel.get_bounds">
-<span class="sig-name descname"><span class="pre">get_bounds</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.SphotModel.get_bounds" title="Link to this definition"></a></dt>
-<dd></dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="sphot.fitting.SphotModel.list_to_params">
-<span class="sig-name descname"><span class="pre">list_to_params</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.SphotModel.list_to_params" title="Link to this definition"></a></dt>
-<dd><p>convert a list of free parameters to the full model parameter array</p>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="sphot.fitting.SphotModel.parse_params">
-<span class="sig-name descname"><span class="pre">parse_params</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">theta</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.SphotModel.parse_params" title="Link to this definition"></a></dt>
-<dd><p>a helper function to parse coordinates to all relevant sub-models.</p>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="sphot.fitting.SphotModel.set_conditions">
-<span class="sig-name descname"><span class="pre">set_conditions</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">list_of_conditions</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.SphotModel.set_conditions" title="Link to this definition"></a></dt>
-<dd><p>set condition functions.
-:param list_of_conditions: list of conditions, each as a 2-tuple. Each tuple is evaluated so that (a,b) is True if a &gt;= b.
-:type list_of_conditions: list of 2-tuple
-:param Inside the tuple can be either the parameter name or numerical value. For example:
-:type Inside the tuple can be either the parameter name or numerical value. For example: 'r_eff',10),('r_eff_1','r_eff_0')] means that it returns True if (r_eff &gt;= 10 AND r_eff_1 &gt;= r_eff_0
-:param [:
-:type [: 'r_eff',10),('r_eff_1','r_eff_0')] means that it returns True if (r_eff &gt;= 10 AND r_eff_1 &gt;= r_eff_0</p>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="sphot.fitting.SphotModel.set_fixed_params">
-<span class="sig-name descname"><span class="pre">set_fixed_params</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fixed_params</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.fitting.SphotModel.set_fixed_params" title="Link to this definition"></a></dt>
 <dd></dd></dl>
 
 </dd></dl>

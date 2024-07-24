@@ -22,6 +22,7 @@ from .logging import logger
 def make_modelimg(fit_models,shape,psf_shape):
     ''' modified version of photutil's function.
     No background is added.
+    
     Args:
         fit_models: list of PSF models
     Returns:
@@ -99,6 +100,7 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
                       plot=True,
                       **kwargs):
     """ Performs PSF photometry. Main function to run PSF photometry.
+    
     Args:
         data (2d array): the data to perform PSF photometry.
         psfimg (2d array): the PSF image.

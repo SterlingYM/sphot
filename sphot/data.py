@@ -47,11 +47,15 @@ def calc_mag(counts_Mjy_per_Sr,errors_Mjy_per_Sr=None,pixel_scale=0.03):
 class CutoutData():
     def __init__(self,data=None,psf=None,psf_oversample=None,filtername=None,**kwargs):
         '''
+        Initialize the CutoutData object.
+        
         Args:
             data (2D array): cutout image data
             psf (2D array): PSF data. It can be oversampled (pixel scale could be an integer multiple of the image)
             PSF_oversample (int): oversampling factor of the PSF
             filtername (str): filter name
+        Returns:
+            CutoutData object
         '''
         if data is not None:
             self.data = data
@@ -140,6 +144,7 @@ class CutoutData():
                         plot=False,sigma_kernel=5,
                         clip_lower_counts_percentile=10,**kwargs):
         '''roughly estimate the effective radius using Gaussian profile.
+        
         Args:
             sigma_guess (float): initial guess for the standard deviation of the Gaussian profile (in pixels)
             center_slack (float): the fraction of the image size (from center) within which the center of the galaxy is expected. Default is 5%
@@ -271,7 +276,7 @@ class CutoutData():
             plt.show()
         
 class MultiBandCutout():
-    ''' a container for CutoutData '''
+    ''' a container for CutoutData. Includes some useful methods for handling multiple bands of the same object.'''
     def __init__(self,name=None,**kwargs):
         self.name = name
         for key,val in kwargs.items():
@@ -305,7 +310,8 @@ class MultiBandCutout():
         fig.suptitle(f'{title} {self.name} {attr}',fontsize=15)    
         
     def crop_in(self,x0,y0,size):
-        ''' crop-in and re-generate the MultiBandCutout object
+        ''' crop-in and re-generate the MultiBandCutout object.
+        
         Args:
             multiband_obj (MultiBandCutout): the object to crop in
             x0,y0 (float): the center of the new image

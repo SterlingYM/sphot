@@ -55,6 +55,7 @@ class IsoPhotApertures():
                         fit_to='sersic_modelimg',
                         frac_enc=np.arange(0.1,0.9,100)):
         ''' create isophotal apertures, equally spaced in the surface brightness levels
+        
         Args:
             fit_to (str): the attribute of the cutoutdata to fit the isophotal apertures to
             frac_enc (list): approx. fractional levels of enclosed flux within aperture
@@ -171,6 +172,7 @@ class CutoutDataPhotometry():
     def measure_sky(self,measure_on='residual_masked',N_apers=200,center_mask=3,
                     mode='random'):
         ''' Estimate the uncertainty in aperture photometry using the background and moving aperture 
+        
         Args:
             measure_on (str): the attribute of the galaxy to measure the sky on
             center_mask (float): the size of the mask near the center to avoid when measuring sky, in units of aperture radius

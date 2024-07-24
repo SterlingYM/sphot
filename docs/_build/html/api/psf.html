@@ -111,31 +111,27 @@
 <dl class="py function">
 <dt class="sig sig-object py" id="sphot.psf.do_psf_photometry">
 <span class="sig-prename descclassname"><span class="pre">sphot.psf.</span></span><span class="sig-name descname"><span class="pre">do_psf_photometry</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">psfimg</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">psf_oversample</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">psf_sigma</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">th</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Niter</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fit_shape</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(3,</span> <span class="pre">3)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">render_shape</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(25,</span> <span class="pre">25)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_relative_error_flux</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.psf.do_psf_photometry" title="Link to this definition"></a></dt>
-<dd><p>Performs PSF photometry. Main function to run PSF photometry.
-:param data: the data to perform PSF photometry.
-:type data: 2d array
-:param psfimg: the PSF image.
-:type psfimg: 2d array
-:param psf_sigma: the HWHM of the PSF. Use FWHM/2
-:type psf_sigma: float
-:param psf_oversample: the oversampling factor of the PSF.
-:type psf_oversample: int
-:param th: the detection threshold in background STD.
-:type th: float
-:param Niter: the number of iterations to repeat the photometry (after cleaning up the data).
-:type Niter: int
-:param fit_shape: the shape of the fit.
-:type fit_shape: 2-tuple
-:param render_shape: the shape of each PSF to be rendered.
-:type render_shape: 2-tuple</p>
+<dd><p>Performs PSF photometry. Main function to run PSF photometry.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>the photometry result.
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>2d array</em>) -- the data to perform PSF photometry.</p></li>
+<li><p><strong>psfimg</strong> (<em>2d array</em>) -- the PSF image.</p></li>
+<li><p><strong>psf_sigma</strong> (<em>float</em>) -- the HWHM of the PSF. Use FWHM/2</p></li>
+<li><p><strong>psf_oversample</strong> (<em>int</em>) -- the oversampling factor of the PSF.</p></li>
+<li><p><strong>th</strong> (<em>float</em>) -- the detection threshold in background STD.</p></li>
+<li><p><strong>Niter</strong> (<em>int</em>) -- the number of iterations to repeat the photometry (after cleaning up the data).</p></li>
+<li><p><strong>fit_shape</strong> (<em>2-tuple</em>) -- the shape of the fit.</p></li>
+<li><p><strong>render_shape</strong> (<em>2-tuple</em>) -- the shape of each PSF to be rendered.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>the photometry result.
 model_img (2d array): the model image.
 resid (2d array): the residual image.</p>
 </dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>phot_result (QTable)</p>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>phot_result (QTable)</p>
 </dd>
 </dl>
 </dd></dl>
@@ -156,14 +152,16 @@ resid (2d array): the residual image.</p>
 <dt class="sig sig-object py" id="sphot.psf.make_modelimg">
 <span class="sig-prename descclassname"><span class="pre">sphot.psf.</span></span><span class="sig-name descname"><span class="pre">make_modelimg</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fit_models</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shape</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">psf_shape</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.psf.make_modelimg" title="Link to this definition"></a></dt>
 <dd><p>modified version of photutil's function.
-No background is added.
-:param fit_models: list of PSF models</p>
+No background is added.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>rendered model image</p>
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>fit_models</strong> -- list of PSF models</p>
 </dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>model_img</p>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>rendered model image</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>model_img</p>
 </dd>
 </dl>
 </dd></dl>

@@ -22,8 +22,8 @@
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Fitting" href="fitting.html" />
-    <link rel="prev" title="Data" href="data.html" /> 
+    <link rel="next" title="Sersic model fitting" href="fitting.html" />
+    <link rel="prev" title="Data objects" href="data.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -52,7 +52,7 @@
 <p class="caption" role="heading"><span class="caption-text">API documentation</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="core.html">Core</a></li>
-<li class="toctree-l1"><a class="reference internal" href="data.html">Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="data.html">Data objects</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Plotting</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#sphot.plotting.astroplot"><code class="docutils literal notranslate"><span class="pre">astroplot()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="#sphot.plotting.plot_profile2d"><code class="docutils literal notranslate"><span class="pre">plot_profile2d()</span></code></a></li>
@@ -60,7 +60,10 @@
 <li class="toctree-l2"><a class="reference internal" href="#sphot.plotting.plot_sphot_results"><code class="docutils literal notranslate"><span class="pre">plot_sphot_results()</span></code></a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="fitting.html">Fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="fitting.html">Sersic model fitting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="psf.html">PSF photometry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="aperture.html">Aperture photometry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="utils.html">Utilities</a></li>
 </ul>
 
         </div>
@@ -92,7 +95,8 @@
 <dl class="py function">
 <dt class="sig sig-object py" id="sphot.plotting.astroplot">
 <span class="sig-prename descclassname"><span class="pre">sphot.plotting.</span></span><span class="sig-name descname"><span class="pre">astroplot</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">percentiles</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[1,</span> <span class="pre">99.9]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cmap</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'viridis'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ax</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">offset</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">norm</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">figsize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(5,</span> <span class="pre">5)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">title</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">set_bad</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'r'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.plotting.astroplot" title="Link to this definition"></a></dt>
-<dd></dd></dl>
+<dd><p>plot 2d data in the log scale. Automatically takes care of the negative values.</p>
+</dd></dl>
 
 <dl class="py function">
 <dt class="sig sig-object py" id="sphot.plotting.plot_profile2d">
@@ -102,11 +106,18 @@
 <dl class="py function">
 <dt class="sig sig-object py" id="sphot.plotting.plot_sersicfit_result">
 <span class="sig-prename descclassname"><span class="pre">sphot.plotting.</span></span><span class="sig-name descname"><span class="pre">plot_sersicfit_result</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_annulus</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_img</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.plotting.plot_sersicfit_result" title="Link to this definition"></a></dt>
-<dd><p>plot the sersic profile fit result
-:param data: the original data
-:type data: 2d array
-:param _img: the fitted model image
-:type _img: 2d array</p>
+<dd><p>Plot the sersic profile fit result.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>2d array</em>) -- the original data</p></li>
+<li><p><strong>_img</strong> (<em>2d array</em>) -- the fitted model image</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py function">
@@ -120,8 +131,8 @@
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="data.html" class="btn btn-neutral float-left" title="Data" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="fitting.html" class="btn btn-neutral float-right" title="Fitting" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="data.html" class="btn btn-neutral float-left" title="Data objects" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="fitting.html" class="btn btn-neutral float-right" title="Sersic model fitting" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

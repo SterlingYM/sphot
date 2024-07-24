@@ -122,13 +122,16 @@
 <dl class="py method">
 <dt class="sig sig-object py" id="sphot.aperture.CutoutDataPhotometry.measure_sky">
 <span class="sig-name descname"><span class="pre">measure_sky</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">measure_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'residual_masked'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">N_apers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">200</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">center_mask</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mode</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'random'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.aperture.CutoutDataPhotometry.measure_sky" title="Link to this definition"></a></dt>
-<dd><p>Estimate the uncertainty in aperture photometry using the background and moving aperture
-:param measure_on: the attribute of the galaxy to measure the sky on
-:type measure_on: str
-:param center_mask: the size of the mask near the center to avoid when measuring sky, in units of aperture radius
-:type center_mask: float
-:param mode: 'random' or 'grid' -- whether to sample the sky apertures randomly or in a grid
-:type mode: str</p>
+<dd><p>Estimate the uncertainty in aperture photometry using the background and moving aperture</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>measure_on</strong> (<em>str</em>) -- the attribute of the galaxy to measure the sky on</p></li>
+<li><p><strong>center_mask</strong> (<em>float</em>) -- the size of the mask near the center to avoid when measuring sky, in units of aperture radius</p></li>
+<li><p><strong>mode</strong> (<em>str</em>) -- 'random' or 'grid' -- whether to sample the sky apertures randomly or in a grid</p></li>
+</ul>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py method">
@@ -149,12 +152,16 @@
 
 <dl class="py method">
 <dt class="sig sig-object py" id="sphot.aperture.IsoPhotApertures.create_apertures">
-<span class="sig-name descname"><span class="pre">create_apertures</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fit_to</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'sersic_modelimg'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">frac_enc</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">array([0.1])</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.aperture.IsoPhotApertures.create_apertures" title="Link to this definition"></a></dt>
-<dd><p>create isophotal apertures, equally spaced in the surface brightness levels
-:param fit_to: the attribute of the cutoutdata to fit the isophotal apertures to
-:type fit_to: str
-:param frac_enc: approx. fractional levels of enclosed flux within aperture
-:type frac_enc: list</p>
+<span class="sig-name descname"><span class="pre">create_apertures</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fit_to='sersic_modelimg'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">frac_enc=&lt;MagicMock</span> <span class="pre">name='mock.arange()'</span> <span class="pre">id='4464192976'&gt;</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.aperture.IsoPhotApertures.create_apertures" title="Link to this definition"></a></dt>
+<dd><p>create isophotal apertures, equally spaced in the surface brightness levels</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fit_to</strong> (<em>str</em>) -- the attribute of the cutoutdata to fit the isophotal apertures to</p></li>
+<li><p><strong>frac_enc</strong> (<em>list</em>) -- approx. fractional levels of enclosed flux within aperture</p></li>
+</ul>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py method">
@@ -177,7 +184,7 @@
 
 <dl class="py function">
 <dt class="sig sig-object py" id="sphot.aperture.prepare_blurring_kernel">
-<span class="sig-prename descclassname"><span class="pre">sphot.aperture.</span></span><span class="sig-name descname"><span class="pre">prepare_blurring_kernel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">galaxy</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filt</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blur_to</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">window=&lt;photutils.psf.matching.windows.TopHatWindow</span> <span class="pre">object&gt;</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.aperture.prepare_blurring_kernel" title="Link to this definition"></a></dt>
+<span class="sig-prename descclassname"><span class="pre">sphot.aperture.</span></span><span class="sig-name descname"><span class="pre">prepare_blurring_kernel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">galaxy</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filt</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blur_to</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">window=&lt;MagicMock</span> <span class="pre">name='mock.TopHatWindow()'</span> <span class="pre">id='4463417232'&gt;</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.aperture.prepare_blurring_kernel" title="Link to this definition"></a></dt>
 <dd><p>Create a PSF-matching kernel</p>
 </dd></dl>
 

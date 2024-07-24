@@ -15,8 +15,10 @@ from astropy.stats import sigma_clip
 from astropy.nddata import Cutout2D
 from astropy.modeling import models
 
-def astroplot(data,percentiles=[1,99.9],cmap='viridis',ax=None,
+def astroplot(data,percentiles=[1,99.9],cmap='viridis',
+              ax=None,
               offset=0,norm=None,figsize=(5,5),title=None,set_bad='r'):
+    ''' plot 2d data in the log scale. Automatically takes care of the negative values. '''
     if (data is None) or np.isnan(data).all():
         raise ValueError('Data is empty!')
     if ax is None:
@@ -51,10 +53,14 @@ def astroplot(data,percentiles=[1,99.9],cmap='viridis',ax=None,
     return norm,offset
 
 def plot_sersicfit_result(data,data_annulus,_img):
-    ''' plot the sersic profile fit result
-    Args:
+    ''' 
+    Plot the sersic profile fit result.
+    
+    Parameters:
         data (2d array): the original data
         _img (2d array): the fitted model image
+    Returns:
+        None
     '''
     _res = data - _img
     fig = plt.figure(figsize=(10,10))

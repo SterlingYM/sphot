@@ -30,7 +30,8 @@ from .plotting import astroplot, plot_sersicfit_result
         
 class SphotModel(PSFConvolvedModel2D):
     def __init__(self,model,cutoutdata):
-        ''' A wrapper class for the petrofit model.
+        ''' 
+        A wrapper class for the petrofit model.
         Args:
             model (astropy FittableModel): model to fit.
             cutoutdata (CutoutData): the data to fit.
@@ -127,6 +128,9 @@ class SphotModel(PSFConvolvedModel2D):
         self.condition_func = condition_func
         
 class ModelFitter():
+    '''
+    A fitter class to perform Sersic model fitting to data.
+    '''
     def __init__(self,model,cutoutdata,**kwargs):
         self.cutoutdata = cutoutdata
         self.shape = self.cutoutdata.data.shape
@@ -134,7 +138,9 @@ class ModelFitter():
         self.param_names = model._param_names
 
     def standardize_params(self,params):
-        ''' normalize parameters to be between 0 and 1 '''
+        '''
+        normalize parameters to be between 0 and 1.
+        '''
         lower_bounds,upper_bounds = self.bounds_physical.T
         return (params - lower_bounds) / (upper_bounds - lower_bounds)
 
