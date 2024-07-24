@@ -37,17 +37,25 @@ from unittest.mock import MagicMock
 # #Location of Sphinx files
 sys.path.insert(0, os.path.abspath('../'))
 
-sys.modules['numpy'] = MagicMock()
-sys.modules['scipy'] = MagicMock()
-sys.modules['astropy'] = MagicMock()
-sys.modules['petrofit'] = MagicMock()
-sys.modules['h5py'] = MagicMock()
-sys.modules['pandas'] = MagicMock()
-sys.modules['cv2'] = MagicMock()
-sys.modules['photutils'] = MagicMock()
-sys.modules['tqdm'] = MagicMock()
-sys.modules['csaps'] = MagicMock()
-sys.modules['skimage'] = MagicMock()
-sys.modules['matplotlib'] = MagicMock()
+autodoc_mock_imports = [
+    'numpy','numpy.ma',
+    'scipy','scipy.interpolate',
+    'scipy.stats','scipy.ndimage',
+    'scipy.optimize',
+    'astropy','astropy.convolution',
+    'astropy.nddata','astropy.units',
+    'astropy.stats','astropy.io',
+    'astropy.table',
+    'astropy.modeling.fitting','astropy.modeling.models',
+    'astropy.modeling',
+    'astropy.modeling.functional_models',
+    'petrofit','petrofit.modeling',
+    'h5py','pandas','cv2','photutils','photutils.psf',
+    'photutils.aperture','photutils.background','photutils.detection',
+    'tqdm','tqdm.auto',
+    'csaps','skimage',
+    'matplotlib','matplotlib.pyplot','matplotlib.colors','matplotlib.cm',]
+for mod in autodoc_mock_imports:
+    sys.modules[mod] = MagicMock()
 
-autodoc_mock_imports = ['numpy','scipy','astropy','petrofit','h5py','pandas','cv2','photutils','tqdm','csaps','skimage','matplotlib']
+
