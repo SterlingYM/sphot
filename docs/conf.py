@@ -29,10 +29,11 @@ language = 'python'
 html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
 
-# import os
+import os
 # import sys
 # #Location of Sphinx files
-# sys.path.insert(0, os.path.abspath('../'))
+sys.path.insert(0, os.path.abspath('../'))
+
 import sys
 from unittest.mock import MagicMock
 sys.modules['numpy'] = MagicMock()
