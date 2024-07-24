@@ -54,7 +54,8 @@ autodoc_mock_imports = [
     'photutils.aperture','photutils.background','photutils.detection',
     'tqdm','tqdm.auto',
     'csaps','skimage',
-    'matplotlib','matplotlib.pyplot','matplotlib.colors','matplotlib.cm',]
+    'matplotlib','matplotlib.pyplot','matplotlib.colors','matplotlib.cm',
+    'rich','rich.progress','rich.table','rich.console',]
 for mod in autodoc_mock_imports:
     sys.modules[mod] = MagicMock()
 
