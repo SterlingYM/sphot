@@ -29,7 +29,23 @@ language = 'python'
 html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
 
-import os
+# import os
+# import sys
+# #Location of Sphinx files
+# sys.path.insert(0, os.path.abspath('../'))
 import sys
-#Location of Sphinx files
-sys.path.insert(0, os.path.abspath('../'))
+from unittest.mock import MagicMock
+sys.modules['numpy'] = MagicMock()
+sys.modules['scipy'] = MagicMock()
+sys.modules['astropy'] = MagicMock()
+sys.modules['petrofit'] = MagicMock()
+sys.modules['h5py'] = MagicMock()
+sys.modules['pandas'] = MagicMock()
+sys.modules['cv2'] = MagicMock()
+sys.modules['photutils'] = MagicMock()
+sys.modules['tqdm'] = MagicMock()
+sys.modules['csaps'] = MagicMock()
+sys.modules['skimage'] = MagicMock()
+sys.modules['matplotlib'] = MagicMock()
+
+autodoc_mock_imports = ['numpy','scipy','astropy','petrofit','h5py','pandas','cv2','photutils','tqdm','csaps','skimage','matplotlib']
