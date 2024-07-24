@@ -2,5 +2,3 @@ ipykernel
 sphinx>=1.4
 nbsphinx
 sphinx_rtd_theme
-sphinx-autodoc-typehints
-sphinx-napoleon
