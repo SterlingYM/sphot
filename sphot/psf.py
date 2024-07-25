@@ -30,8 +30,8 @@ def make_modelimg(fit_models,shape,psf_shape):
     '''
     model_img = np.zeros(shape)
     for fit_model in fit_models:
-        x0 = getattr(fit_model, 'x_0').value
-        y0 = getattr(fit_model, 'y_0').value
+        x0 = fit_model[2]#getattr(fit_model, 'x_0').value
+        y0 = fit_model[3]#getattr(fit_model, 'y_0').value
         try:
             slc_lg, _ = overlap_slices(shape, psf_shape, (y0, x0),
                                         mode='trim')
@@ -62,7 +62,7 @@ class PSFFitter():
                                                     center_mask_params=center_mask_params,
                                                     **kwargs)
         psf_model_total = self.data - resid
-        psf_model_total -= psf_model_total.min() # PSFs are forced to be positive, so minimum is always zero
+        psf_model_total -= np.nanmin(psf_model_total) # PSFs are forced to be positive, so minimum is always zero
         # TODO: handle the case where all pixels are filled with PSF
 
         # generate PSF-subtracted data
@@ -127,6 +127,9 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
     # take data stats & prepare background-subtracted data
     try:
         bkg_level = mmm_bkg(data)
+        if np.isnan(bkg_level):
+            logger.info('PSF background stats failed.')
+            return None,None,None,None
         data_bksub = data - bkg_level
         bkg_std = bkgrms(data_bksub)
         error = np.ones_like(data_bksub) * bkg_std
@@ -190,25 +193,34 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
     if phot_result is None:
         logger.info('PSFPhotometry failed.')
         return None,None,None,None
+    else:
+        model_img = psfphot.make_model_image(data_bksub.shape, render_shape, include_localbkg=False)
+        resid = data_bksub - model_img
     
-    # results
-    # Remove flagged PSFs
-    fit_models = np.asarray(psfphot._fit_models)
-    s,msg = filter_psfphot_results(phot_result,**kwargs)
-    if (s is None) or (s.sum() == 0):
-        logger.info('all sources are flagged.'+msg)
-        return None,None,None,None
-    model_img = make_modelimg(fit_models[s],shape=data.shape,
-                            psf_shape=(25,25))
-    resid = data_bksub - model_img
+    # TODO: make this compatible with photutils 1.13
+    # # results
+    # # Remove flagged PSFs
+    # try:
+    #     fit_models = np.asarray(psfphot._fit_model_params)
+    #     print(fit_models)
+    # except Exception:
+    #     print(psfphot._fit_model_params.columns)
+    # s,msg = filter_psfphot_results(phot_result,**kwargs)
+    # if (s is None) or (s.sum() == 0):
+    #     logger.info('all sources are flagged.'+msg)
+    #     return None,None,None,None
+    # model_img = make_modelimg(fit_models[s],shape=data.shape,
+    #                         psf_shape=(25,25))
+    # resid = data_bksub - model_img
 
     if plot:
         fig,axes = plt.subplots(1,3,figsize=(15,5))
         norm,offset = astroplot(data_bksub,ax=axes[0],percentiles=[0.1,99.9])
         astroplot(model_img,ax=axes[1],norm=norm,offset=offset)
         astroplot(resid,ax=axes[2],norm=norm,offset=offset)
+        plt.show()
         
-    return phot_result[s], data_bksub, model_img, resid
+    return phot_result, data_bksub, model_img, resid
 
 def filter_psfphot_results(phot_result,
                            center_mask_params=None,
@@ -287,14 +299,18 @@ def iterative_psf_fitting(data,psfimg,psf_sigma,psf_oversample,
                                         th=th,**kwargs)
         if progress is not None:
             progress.update(progress_psf, advance=1, refresh=True)
-        if psf_results[0] is not None:
-            _phot_result, _, _, resid = psf_results
+        if psf_results[0] is None:
+            continue
+        else:
+            _phot_result, _, _, _resid = psf_results
+            if np.all(~np.isfinite(_resid)):
+                continue
+            # append the results
+            resid = _resid
             if phot_result is None:
                 phot_result = _phot_result
             else:
                 phot_result = vstack([phot_result, _phot_result])
-        else:
-            continue
     if progress is not None:
         progress.remove_task(progress_psf)
     return phot_result, resid
