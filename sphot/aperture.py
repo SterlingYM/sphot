@@ -92,13 +92,43 @@ class IsoPhotApertures():
         self.areas = np.array(areas)
         self.semi_major_axes = np.array(semi_major_axes)    
 
+    def fill_nans(self,apply_to='psf_sub_data',
+                  fill_method='noise',
+                  max_nan_frac=0.5):
+        ''' fill in NaN values in the data. creates a new attribute with '_filled' suffix
+        
+        Args:
+            fill_method (str): 'noise' or 'median' -- how to fill in NaN values in the data
+        '''
+        # replace NaNs with mean counts if it's just a few pixels
+        data = getattr(self.cutoutdata,apply_to).copy()
+        data_filled = data.copy()
+        
+        for i in range(len(self.apertures)):
+            if i == 0:
+                continue
+            aper_outer = self.apertures[i]
+            aper_inner = self.apertures[i-1]
+            mask_outer = aper_outer.to_mask(method='center').to_image(data.shape).astype(bool)
+            mask_inner = aper_inner.to_mask(method='center').to_image(data.shape).astype(bool)
+            mask_img = mask_outer & (~mask_inner)
+            median_val = np.nanmedian(data[mask_img])
+            s = mask_img & (~np.isfinite(data))
+            if s.sum() <= max_nan_frac * mask_img.sum():
+                data_filled[s] = median_val
+            else:
+                pass            
+        setattr(self.cutoutdata,apply_to+'_filled',data_filled)
+
     def measure_flux(self,measure_on='psf_sub_data'):
-        ''' perform aperture photometry using pre-constructed isophotal apertures '''
+        ''' 
+        perform aperture photometry using pre-constructed isophotal apertures.
+        
+        Args:
+            measure_on (str): the attribute of the cutoutdata to measure the flux on
+        '''
         data = getattr(self.cutoutdata,measure_on).copy()
         data_err = getattr(self.cutoutdata,measure_on+'_error',None)
-        
-        # fill in NaN values with random noise
-        data[np.isnan(data)] = np.random.normal(0,data_err,data.shape)[np.isnan(data)]
         
         fluxes_enclosed = []
         fluxes_enclosed_err = []

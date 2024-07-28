@@ -15,11 +15,12 @@ from photutils.psf import (SourceGrouper, IterativePSFPhotometry,
 from photutils.detection import DAOStarFinder
 from photutils.background import (LocalBackground, MMMBackground,
                                   MADStdBackgroundRMS)
+from photutils.datasets.images import make_model_image as _make_model_image
 
 from .data import get_data_annulus
 from .logging import logger
 
-def make_modelimg(fit_models,shape,psf_shape):
+def make_modelimg(psffitter,shape,psf_shape):
     ''' modified version of photutil's function.
     No background is added.
     
@@ -28,20 +29,66 @@ def make_modelimg(fit_models,shape,psf_shape):
     Returns:
         model_img: rendered model image    
     '''
-    model_img = np.zeros(shape)
-    for fit_model in fit_models:
-        x0 = fit_model[2]#getattr(fit_model, 'x_0').value
-        y0 = fit_model[3]#getattr(fit_model, 'y_0').value
+    
+    if isinstance(psffitter, PSFPhotometry):
+        psf_model = psffitter.psf_model
+        fit_params = psffitter._fit_model_params
+        local_bkgs = psffitter.init_params['local_bkg']
+    else:
+        psf_model = psffitter._psfphot.psf_model
+        if psffitter.mode == 'new':
+            # collect the fit params and local backgrounds from each
+            # iteration
+            local_bkgs = []
+            for i, psfphot in enumerate(psffitter.fit_results):
+                if i == 0:
+                    fit_params = psfphot._fit_model_params
+                else:
+                    fit_params = vstack((fit_params,
+                                            psfphot._fit_model_params))
+                local_bkgs.append(psfphot.init_params['local_bkg'])
+
+            local_bkgs = _flatten(local_bkgs)
+        else:
+            # use the fit params and local backgrounds only from the
+            # final iteration, which includes all sources
+            fit_params = self.fit_results[-1]._fit_model_params
+            local_bkgs = self.fit_results[-1].init_params['local_bkg']
+
+        model_params = fit_params
+
+        if include_localbkg:
+            # add local_bkg
+            model_params = model_params.copy()
+            model_params['local_bkg'] = local_bkgs
+
         try:
-            slc_lg, _ = overlap_slices(shape, psf_shape, (y0, x0),
-                                        mode='trim')
-        except Exception:
-            continue
-        yy, xx = np.mgrid[slc_lg]
-        model_img[slc_lg] += fit_model(xx, yy)
+            x_name = psf_model.x_name
+            y_name = psf_model.y_name
+        except AttributeError:
+            x_name = 'x_0'
+            y_name = 'y_0'
+
+        return _make_model_image(shape, psf_model, model_params,
+                                 model_shape=psf_shape,
+                                 x_name=x_name, y_name=y_name,
+                                 progress_bar=progress_bar)
+        
+    # model_img = np.zeros(shape)
+    # for fit_model in fit_models:
+    #     x0 = fit_model[2]#getattr(fit_model, 'x_0').value
+    #     y0 = fit_model[3]#getattr(fit_model, 'y_0').value
+    #     try:
+    #         slc_lg, _ = overlap_slices(shape, psf_shape, (y0, x0),
+    #                                     mode='trim')
+    #     except Exception:
+    #         continue
+    #     yy, xx = np.mgrid[slc_lg]
+    #     model_img[slc_lg] += fit_model(xx, yy)
     return model_img
 
 class PSFFitter():
+    ''' A class to perform PSF fitting. '''
     def __init__(self,cutoutdata):
         self.cutoutdata = cutoutdata
         self.psf_sigma = cutoutdata.psf_sigma
@@ -95,11 +142,25 @@ class PSFFitter():
         return self.cutoutdata
 
 def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
-                      th=2,Niter=3,fit_shape=(3,3),render_shape=(25,25),
+                      th=2,Niter=2,fit_shape=(3,3),render_shape=(25,25),
                       max_relative_error_flux=0.2,
                       plot=True,
+                      finder_kwargs=dict(roundhi=1.0, roundlo=-1.0,
+                                         sharplo=0.20, sharphi=1.0),
+                      localbkg_bounds=(2,5),
+                      grouper_sep=3.0,
                       **kwargs):
     """ Performs PSF photometry. Main function to run PSF photometry.
+    This function does the following:
+        1. turn psfimg into a fittable model
+        2. estimate the background statistics (mean, std)
+        3. subtract background from data
+        4. perform IterativePSFPhotometry with the finder threshold at th*std
+        5. filter the results based on the fit quality (cfit, qfit, flux_err)
+        6. perform PSFPhotometry using the filtered results as input
+        7. filter the results again
+        8. generate model image and residual image
+        9. plot the results if necessary
     
     Args:
         data (2d array): the data to perform PSF photometry.
@@ -107,10 +168,12 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
         psf_sigma (float): the HWHM of the PSF. Use FWHM/2
         psf_oversample (int): the oversampling factor of the PSF.
         th (float): the detection threshold in background STD.
-        Niter (int): the number of iterations to repeat the photometry (after cleaning up the data).
+        Niter (int): the number of iterations to repeat the photometry (after cleaning up the data). -- !deprecated!
         fit_shape (2-tuple): the shape of the fit.
         render_shape (2-tuple): the shape of each PSF to be rendered.
-
+        finder_kwargs (dict,optional): the kwargs for DAOStarFinder.
+        localbkg_bounds (2-tuple,optional): (inner, outer) radii to LocalBackground object, in the unit of psf_sigma.
+        grouper_sep (float,optional): the minimum separation between sources to be used for SourceGrouper.
     Returns:
         phot_result (QTable): the photometry result.
         model_img (2d array): the model image.
@@ -120,63 +183,76 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
     bkgrms = MADStdBackgroundRMS()
     mmm_bkg = MMMBackground()
 
-    # PSF
-    psf_model = FittableImageModel(psfimg, flux=1.0, x_0=0, y_0=0, 
-                                   oversampling=psf_oversample, fill_value=0.0)
+    # PSF image to model
+    psf_model = FittableImageModel(psfimg, flux=1.0, 
+                                   x_0=0, y_0=0, 
+                                   oversampling=psf_oversample, 
+                                   fill_value=0.0)
 
     # take data stats & prepare background-subtracted data
     try:
         bkg_level = mmm_bkg(data)
-        if np.isnan(bkg_level):
-            logger.info('PSF background stats failed.')
-            return None,None,None,None
+        assert np.isfinite(bkg_level), 'background is not finite'
         data_bksub = data - bkg_level
         bkg_std = bkgrms(data_bksub)
         error = np.ones_like(data_bksub) * bkg_std
         kwargs.update({'data_shape':data_bksub.shape})
     except Exception as e:
-        logger.info('PSF background stats failed.')
-        astroplot(data)
-        raise e
+        logger.info(f'PSF background stats failed ({str(e)})')
         return None,None,None,None
 
     # more tools
-    daofinder = DAOStarFinder(threshold=th*bkg_std, fwhm=psf_sigma*2.33, 
-                            roundhi=1.0, roundlo=-1.0,
-                            sharplo=0.20, sharphi=1.0)
-    localbkg_estimator = LocalBackground(2*psf_sigma, 5*psf_sigma, mmm_bkg)
-    grouper = SourceGrouper(min_separation=3.0 * psf_sigma) # nearby sources to be fit simultaneously
+    daofinder = DAOStarFinder(
+        threshold=th*bkg_std, 
+        fwhm=psf_sigma*2.33, **finder_kwargs)
+    localbkg_estimator = LocalBackground(
+        localbkg_bounds[0]*psf_sigma, 
+        localbkg_bounds[1]*psf_sigma, 
+        mmm_bkg)
+    grouper = SourceGrouper(min_separation=3.0 * psf_sigma) 
 
-    # run phootmetry
-    psf_iter = IterativePSFPhotometry(psf_model, fit_shape, finder=daofinder,
-                                    mode='new',grouper=grouper,
-                                    localbkg_estimator=localbkg_estimator,
-                                    aperture_radius=3,
-                                    maxiters=5,fitter_maxiters=300)
+    #### run phootmetry
+    psf_iter = IterativePSFPhotometry(
+        psf_model, fit_shape, 
+        finder=daofinder,
+        mode='new',
+        grouper=grouper,
+        localbkg_estimator=localbkg_estimator,
+        aperture_radius=3,
+        maxiters=5,
+        fitter_maxiters=300
+        )
     try:
         phot_result = psf_iter(data_bksub, error=error)
     except Exception as e:
-        logger.info(f'IterativePSFPhotometry failed due to: {type(e)}')
+        logger.info(f'IterativePSFPhotometry failed due to: {str(e)}')
         phot_result = None
     if phot_result is None:
         logger.info('No detection.')
         return None,None,None,None
     
-    # repeat psf_iter Niter times to (hopefully) re-fit flagged sources
-    for _ in range(Niter):
-        s,msg = filter_psfphot_results(phot_result,**kwargs)
-        if (s is None) or (s.sum() == 0):
-            logger.info(f'No source passed the cut ({len(phot_result)} detection).'+msg)
-            return None,None,None,None
-        init_params = QTable()
-        init_params['x'] = phot_result['x_fit'].value[s]
-        init_params['y'] = phot_result['y_fit'].value[s]
-        try:
-            phot_result = psf_iter(data_bksub, error=error, init_params=init_params)
-        except Exception as e:
-            pass
+    # TODO: delete the following block by 8/15
+    # # repeat psf_iter Niter times to (hopefully) re-fit flagged sources
+    # for _ in range(Niter):
+    #     s,msg = filter_psfphot_results(phot_result,**kwargs)
+    #     if (s is None) or (s.sum() == 0):
+    #         logger.info(f'No source passed the cut ({len(phot_result)} detection).'+msg)
+    #         return None,None,None,None
+    #     init_params = QTable()
+    #     init_params['x'] = phot_result['x_fit'].value[s]
+    #     init_params['y'] = phot_result['y_fit'].value[s]
+    #     try:
+    #         phot_result = psf_iter(data_bksub, 
+    #                                error=error, 
+    #                                init_params=init_params)
+    #     except Exception as e:
+    #         pass
 
-    # final run
+    if phot_result is None:
+        logger.info('PSFPhotometry failed.')
+        return None,None,None,None
+    
+    #### final run -- fit all at once
     s,msg = filter_psfphot_results(phot_result,**kwargs)
     if s.sum() == 0:
         logger.info('all sources are flagged.'+msg)
@@ -184,35 +260,36 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
     init_params = QTable()
     init_params['x'] = phot_result['x_fit'].value[s]
     init_params['y'] = phot_result['y_fit'].value[s]
-    psfphot = PSFPhotometry(psf_model, fit_shape, finder=daofinder, 
-                            localbkg_estimator=localbkg_estimator,
-                            grouper=grouper,
-                            aperture_radius=3,
-                            fitter_maxiters=300)
-    phot_result = psfphot(data_bksub, error=error, init_params=init_params)
+    psfphot = PSFPhotometry(
+        psf_model, fit_shape, 
+        finder=daofinder, 
+        localbkg_estimator=localbkg_estimator,
+        grouper=grouper,
+        aperture_radius=3,
+        fitter_maxiters=300
+        )
+    phot_result = psfphot(data_bksub, 
+                          error=error, 
+                          init_params=init_params)
     if phot_result is None:
         logger.info('PSFPhotometry failed.')
         return None,None,None,None
-    else:
-        model_img = psfphot.make_model_image(data_bksub.shape, render_shape, include_localbkg=False)
-        resid = data_bksub - model_img
     
-    # TODO: make this compatible with photutils 1.13
-    # # results
-    # # Remove flagged PSFs
-    # try:
-    #     fit_models = np.asarray(psfphot._fit_model_params)
-    #     print(fit_models)
-    # except Exception:
-    #     print(psfphot._fit_model_params.columns)
-    # s,msg = filter_psfphot_results(phot_result,**kwargs)
-    # if (s is None) or (s.sum() == 0):
-    #     logger.info('all sources are flagged.'+msg)
-    #     return None,None,None,None
-    # model_img = make_modelimg(fit_models[s],shape=data.shape,
-    #                         psf_shape=(25,25))
-    # resid = data_bksub - model_img
+    # generate model image    
+    s,msg = filter_psfphot_results(phot_result,**kwargs)
+    params_table = QTable()
+    params_table['x_0'] = phot_result['x_fit'].value[s]
+    params_table['y_0'] = phot_result['y_fit'].value[s]
+    params_table['flux'] = phot_result['flux_fit'].value[s]
+    model_img = _make_model_image(
+        shape = data_bksub.shape, 
+        model = psfphot.psf_model, #psf_iter._psfphot.psf_model, 
+        params_table = params_table, 
+        model_shape = render_shape,
+        x_name='x_0', y_name='y_0')
+    resid = data_bksub - model_img
 
+    # plot the results if necessary
     if plot:
         fig,axes = plt.subplots(1,3,figsize=(15,5))
         norm,offset = astroplot(data_bksub,ax=axes[0],percentiles=[0.1,99.9])
@@ -224,19 +301,17 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
 
 def filter_psfphot_results(phot_result,
                            center_mask_params=None,
-                           cfit_percentiles=[5,95],
-                           qfit_percentiles=[0,90],
+                           cfit_abs_max=0.01,
+                           qfit_max=0.05,
                            max_relative_error_flux=0.2,
                            data_shape=None,
                            **kwargs):
     ''' Filter the PSF photometry results. '''
-    try:
-        cfit_min,cfit_max = np.nanpercentile(phot_result['cfit'],cfit_percentiles)
-        qfit_min,qfit_max = np.nanpercentile(phot_result['qfit'],qfit_percentiles)
-    except Exception:
-        return None
     
-    s_flags = phot_result['flags'] <= 1
+    cfit_min,cfit_max = -1 * cfit_abs_max, cfit_abs_max
+    qfit_min,qfit_max = 0, qfit_max
+    
+    s_flags = phot_result['flags'] < 1
     s_cfit = (phot_result['cfit'] >= cfit_min) & (phot_result['cfit'] <= cfit_max)
     s_qfit = (phot_result['qfit'] >= qfit_min) & (phot_result['qfit'] <= qfit_max)
     s_fluxerr = (phot_result['flux_err']/phot_result['flux_fit'] <= max_relative_error_flux)
@@ -263,6 +338,7 @@ def filter_psfphot_results(phot_result,
         msg += f'    edge: {int(s_edge.sum())}\n'    
     
     msg += f'Sources that passed all of the above cuts: {int(s.sum())}\n'
+
     return s, msg
 
 def sigma_clip_outside_aperture(data,r_eff,clip_sigma=4,

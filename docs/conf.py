@@ -20,7 +20,7 @@ extensions = [
 ]
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
-
+napoleon_custom_sections = [('Returns', 'params_style')]
 language = 'python'
 
 # -- Options for HTML output -------------------------------------------------
@@ -51,7 +51,7 @@ autodoc_mock_imports = [
     'astropy.modeling.functional_models',
     'petrofit','petrofit.modeling',
     'h5py','pandas','cv2','photutils','photutils.psf',
-    'photutils.aperture','photutils.background','photutils.detection',
+    'photutils.aperture','photutils.background','photutils.detection','photutils.datasets.images',
     'tqdm','tqdm.auto',
     'csaps','skimage',
     'matplotlib','matplotlib.pyplot','matplotlib.colors','matplotlib.cm',

@@ -110,8 +110,22 @@
 
 <dl class="py function">
 <dt class="sig sig-object py" id="sphot.psf.do_psf_photometry">
-<span class="sig-prename descclassname"><span class="pre">sphot.psf.</span></span><span class="sig-name descname"><span class="pre">do_psf_photometry</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">psfimg</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">psf_oversample</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">psf_sigma</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">th</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Niter</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fit_shape</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(3,</span> <span class="pre">3)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">render_shape</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(25,</span> <span class="pre">25)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_relative_error_flux</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.psf.do_psf_photometry" title="Link to this definition"></a></dt>
-<dd><p>Performs PSF photometry. Main function to run PSF photometry.</p>
+<span class="sig-prename descclassname"><span class="pre">sphot.psf.</span></span><span class="sig-name descname"><span class="pre">do_psf_photometry</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">psfimg</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">psf_oversample</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">psf_sigma</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">th</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">Niter</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fit_shape</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(3,</span> <span class="pre">3)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">render_shape</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(25,</span> <span class="pre">25)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_relative_error_flux</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">finder_kwargs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{'roundhi':</span> <span class="pre">1.0,</span> <span class="pre">'roundlo':</span> <span class="pre">-1.0,</span> <span class="pre">'sharphi':</span> <span class="pre">1.0,</span> <span class="pre">'sharplo':</span> <span class="pre">0.2}</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">localbkg_bounds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(2,</span> <span class="pre">5)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">grouper_sep</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3.0</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.psf.do_psf_photometry" title="Link to this definition"></a></dt>
+<dd><p>Performs PSF photometry. Main function to run PSF photometry.
+This function does the following:</p>
+<blockquote>
+<div><ol class="arabic simple">
+<li><p>turn psfimg into a fittable model</p></li>
+<li><p>estimate the background statistics (mean, std)</p></li>
+<li><p>subtract background from data</p></li>
+<li><p>perform IterativePSFPhotometry with the finder threshold at th*std</p></li>
+<li><p>filter the results based on the fit quality (cfit, qfit, flux_err)</p></li>
+<li><p>perform PSFPhotometry using the filtered results as input</p></li>
+<li><p>filter the results again</p></li>
+<li><p>generate model image and residual image</p></li>
+<li><p>plot the results if necessary</p></li>
+</ol>
+</div></blockquote>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
@@ -120,25 +134,27 @@
 <li><p><strong>psf_sigma</strong> (<em>float</em>) -- the HWHM of the PSF. Use FWHM/2</p></li>
 <li><p><strong>psf_oversample</strong> (<em>int</em>) -- the oversampling factor of the PSF.</p></li>
 <li><p><strong>th</strong> (<em>float</em>) -- the detection threshold in background STD.</p></li>
-<li><p><strong>Niter</strong> (<em>int</em>) -- the number of iterations to repeat the photometry (after cleaning up the data).</p></li>
+<li><p><strong>Niter</strong> (<em>int</em>) -- the number of iterations to repeat the photometry (after cleaning up the data). -- !deprecated!</p></li>
 <li><p><strong>fit_shape</strong> (<em>2-tuple</em>) -- the shape of the fit.</p></li>
 <li><p><strong>render_shape</strong> (<em>2-tuple</em>) -- the shape of each PSF to be rendered.</p></li>
+<li><p><strong>finder_kwargs</strong> (<em>dict</em><em>,</em><em>optional</em>) -- the kwargs for DAOStarFinder.</p></li>
+<li><p><strong>localbkg_bounds</strong> (<em>2-tuple</em><em>,</em><em>optional</em>) -- (inner, outer) radii to LocalBackground object, in the unit of psf_sigma.</p></li>
+<li><p><strong>grouper_sep</strong> (<em>float</em><em>,</em><em>optional</em>) -- the minimum separation between sources to be used for SourceGrouper.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>the photometry result.
-model_img (2d array): the model image.
-resid (2d array): the residual image.</p>
-</dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>phot_result (QTable)</p>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>phot_result</strong> (<em>QTable</em>) -- the photometry result.</p></li>
+<li><p><strong>model_img</strong> (<em>2d array</em>) -- the model image.</p></li>
+<li><p><strong>resid</strong> (<em>2d array</em>) -- the residual image.</p></li>
+</ul>
 </dd>
 </dl>
 </dd></dl>
 
 <dl class="py function">
 <dt class="sig sig-object py" id="sphot.psf.filter_psfphot_results">
-<span class="sig-prename descclassname"><span class="pre">sphot.psf.</span></span><span class="sig-name descname"><span class="pre">filter_psfphot_results</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">phot_result</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">center_mask_params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cfit_percentiles</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[5,</span> <span class="pre">95]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">qfit_percentiles</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[0,</span> <span class="pre">90]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_relative_error_flux</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_shape</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.psf.filter_psfphot_results" title="Link to this definition"></a></dt>
+<span class="sig-prename descclassname"><span class="pre">sphot.psf.</span></span><span class="sig-name descname"><span class="pre">filter_psfphot_results</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">phot_result</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">center_mask_params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cfit_abs_max</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.01</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">qfit_max</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_relative_error_flux</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_shape</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.psf.filter_psfphot_results" title="Link to this definition"></a></dt>
 <dd><p>Filter the PSF photometry results.</p>
 </dd></dl>
 
@@ -150,7 +166,7 @@ resid (2d array): the residual image.</p>
 
 <dl class="py function">
 <dt class="sig sig-object py" id="sphot.psf.make_modelimg">
-<span class="sig-prename descclassname"><span class="pre">sphot.psf.</span></span><span class="sig-name descname"><span class="pre">make_modelimg</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fit_models</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shape</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">psf_shape</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.psf.make_modelimg" title="Link to this definition"></a></dt>
+<span class="sig-prename descclassname"><span class="pre">sphot.psf.</span></span><span class="sig-name descname"><span class="pre">make_modelimg</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">psffitter</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shape</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">psf_shape</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.psf.make_modelimg" title="Link to this definition"></a></dt>
 <dd><p>modified version of photutil's function.
 No background is added.</p>
 <dl class="field-list simple">
@@ -158,10 +174,7 @@ No background is added.</p>
 <dd class="field-odd"><p><strong>fit_models</strong> -- list of PSF models</p>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>rendered model image</p>
-</dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p>model_img</p>
+<dd class="field-even"><p><strong>model_img</strong> -- rendered model image</p>
 </dd>
 </dl>
 </dd></dl>
