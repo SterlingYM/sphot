@@ -12,12 +12,13 @@ setup(
         'matplotlib>=3.8',
         'pandas>=2.1',
         'astropy>=6.0',
-        'photutils>=1.12',
+        'photutils>=1.13',
         'petrofit>=0.5',  
         'h5py>=3.10',
         'tqdm>=4.66',
         'csaps>=1.1.0',
         'opencv-python>4.9',
         'scikit-image>=0.22',
+        'rich>=13.7'
     ],
 )

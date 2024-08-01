@@ -46,6 +46,51 @@ def prepare_blurring_kernel(galaxy,filt,blur_to,
 
     return psf_matching_kernel, psf_cropped_ds, psf_base_cropped_ds
 
+def fill_nans(galaxy,apertures,
+              apply_to='psf_sub_data',
+              replace_with='sersic_modelimg',
+              max_nan_frac=0.5):
+    ''' fill in NaN values in the data using median of the finite pixels within annulus defined by consequtive apertures. 
+    Creates a new attribute with '_filled' suffix.
+    
+    Args:
+        galaxy (MultiBandCutout): the galaxy object
+        apertures (list): a list of apertures to define the annulus
+        apply_to (str or list of str): the attributes of the cutoutdata to fill NaNs in
+        replace_with (str): the attribute to use as a reference for filling NaNs if the fraction of NaNs is too high
+    '''
+    raise_replace_warning = False
+    apply_to = np.atleast_1d(apply_to)
+    
+    for apply_attr in apply_to:
+        for filt in galaxy.filters:
+            cutoutdata = galaxy.images[filt]
+            data = getattr(cutoutdata,apply_attr).copy()
+            data_filled = data.copy()
+            
+            for i in range(len(apertures)):
+                if i == 0:
+                    aper = apertures[i]
+                    mask = aper.to_mask(method='center').to_image(data.shape).astype(bool)
+                    s = ~np.isfinite(data) & mask
+                    data_filled[s] = getattr(cutoutdata,replace_with)[s].copy()
+                    raise_replace_warning = True
+                aper_outer = apertures[i]
+                aper_inner = apertures[i-1]
+                mask_outer = aper_outer.to_mask(method='center').to_image(data.shape).astype(bool)
+                mask_inner = aper_inner.to_mask(method='center').to_image(data.shape).astype(bool)
+                mask_img = mask_outer & (~mask_inner)
+                median_val = np.nanmedian(data[mask_img])
+                s = mask_img & (~np.isfinite(data))
+                if s.sum() <= max_nan_frac * mask_img.sum():
+                    data_filled[s] = median_val
+                else:
+                    data_filled[s] = getattr(cutoutdata,replace_with)[s].copy()
+                    raise_replace_warning = True
+            setattr(cutoutdata,apply_attr+'_filled',data_filled)
+    if raise_replace_warning:
+        print('WARNING: some NaN values were replaced with the reference image')
+    return galaxy
 
 class IsoPhotApertures():
     def __init__(self,cutoutdata):
@@ -163,12 +208,13 @@ class IsoPhotApertures():
         xdata = getattr(self,x_attr)   
         ydata = self.petro_idx
 
-        # interpolate petrosian indices
-        # note: normalizedsmooth=True assures that xdata and y_interp are invariant
-        s = np.isfinite(xdata) & np.isfinite(ydata)
-        interp_func = csaps(xdata[s],ydata[s],normalizedsmooth=True)
-        y_interp = interp_func(xdata,extrapolate=False)
-        self.petro_idx_interp = y_interp
+        if not hasattr(self,'petro_idx_interp'):   
+            # interpolate petrosian indices
+            # note: normalizedsmooth=True assures that xdata and y_interp are invariant
+            s = np.isfinite(xdata) & np.isfinite(ydata)
+            interp_func = csaps(xdata[s],ydata[s],normalizedsmooth=True)
+            y_interp = interp_func(xdata,extrapolate=False)
+            self.petro_idx_interp = y_interp
 
         fig,(ax1,ax2) = plt.subplots(1,2,figsize=(10,4))
         astroplot(self.flux_data,ax=ax1)
@@ -184,8 +230,21 @@ class IsoPhotApertures():
         ax2.set_xlabel(x_attr,fontsize=13)
         ax2.legend(frameon=False,loc='upper right',fontsize=13)
         ax2.tick_params(direction='in')
+        # plt.show()
         
-    def get_aper_at(self,petro=None,flux_frac=None):
+    def get_aper_at(self,petro=None,flux_frac=None,x_attr='semi_major_axes'):
+
+
+        if not hasattr(self,'petro_idx_interp'):   
+            # interpolate petrosian indices
+            # note: normalizedsmooth=True assures that xdata and y_interp are invariant
+            xdata = getattr(self,x_attr)   
+            ydata = self.petro_idx
+            s = np.isfinite(xdata) & np.isfinite(ydata)
+            interp_func = csaps(xdata[s],ydata[s],normalizedsmooth=True)
+            y_interp = interp_func(xdata,extrapolate=False)
+            self.petro_idx_interp = y_interp
+            
         if petro is not None:
             idx = np.nanargmin(np.abs(self.petro_idx_interp - petro))
         elif sb is not None:
@@ -258,10 +317,13 @@ class CutoutDataPhotometry():
         self.sky_mean = self.sky_values.mean()
         self.sky_std = self.sky_values.std()
         
-    def measure_flux(self,measure_on='psf_sub_data'):
+    def measure_flux(self,measure_on='psf_sub_data',error_on=None):
         ''' perform aperture photometry using pre-constructed isophotal apertures '''
         data = getattr(self.cutoutdata,measure_on).copy()
-        data_err = getattr(self.cutoutdata,measure_on+'_error',None)
+        if error_on is not None:
+            data_err = getattr(self.cutoutdata,error_on).copy()
+        else:
+            data_err = getattr(self.cutoutdata,measure_on+'_error',None)
         phot = aperture_photometry(data,self.aperture,error=data_err)
         self.flux = phot['aperture_sum'].value[0]
         self.data_flux = data
