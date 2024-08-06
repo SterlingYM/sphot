@@ -231,22 +231,21 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
         logger.info('No detection.')
         return None,None,None,None
     
-    # TODO: delete the following block by 8/15
-    # # repeat psf_iter Niter times to (hopefully) re-fit flagged sources
-    # for _ in range(Niter):
-    #     s,msg = filter_psfphot_results(phot_result,**kwargs)
-    #     if (s is None) or (s.sum() == 0):
-    #         logger.info(f'No source passed the cut ({len(phot_result)} detection).'+msg)
-    #         return None,None,None,None
-    #     init_params = QTable()
-    #     init_params['x'] = phot_result['x_fit'].value[s]
-    #     init_params['y'] = phot_result['y_fit'].value[s]
-    #     try:
-    #         phot_result = psf_iter(data_bksub, 
-    #                                error=error, 
-    #                                init_params=init_params)
-    #     except Exception as e:
-    #         pass
+    # repeat psf_iter Niter times to (hopefully) re-fit flagged sources
+    for _ in range(Niter):
+        s,msg = filter_psfphot_results(phot_result,**kwargs)
+        if (s is None) or (s.sum() == 0):
+            logger.info(f'No source passed the cut ({len(phot_result)} detection).'+msg)
+            return None,None,None,None
+        init_params = QTable()
+        init_params['x'] = phot_result['x_fit'].value[s]
+        init_params['y'] = phot_result['y_fit'].value[s]
+        try:
+            phot_result = psf_iter(data_bksub, 
+                                   error=error, 
+                                   init_params=init_params)
+        except Exception as e:
+            pass
 
     if phot_result is None:
         logger.info('PSFPhotometry failed.')
@@ -257,6 +256,8 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
     if s.sum() == 0:
         logger.info('all sources are flagged.'+msg)
         return None,None,None,None
+    if kwargs.get('verbose',False):
+        logger.info('photmoetry filter info:\n'+msg)
     init_params = QTable()
     init_params['x'] = phot_result['x_fit'].value[s]
     init_params['y'] = phot_result['y_fit'].value[s]
