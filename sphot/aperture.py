@@ -138,8 +138,9 @@ class IsoPhotApertures():
         self.semi_major_axes = np.array(semi_major_axes)    
 
     def fill_nans(self,apply_to='psf_sub_data',
-                  fill_method='noise',
-                  max_nan_frac=0.5):
+                  fill_method='median',
+                  max_nan_frac=0.5,
+                  add_noise = False):
         ''' fill in NaN values in the data. creates a new attribute with '_filled' suffix
         
         Args:
@@ -158,9 +159,14 @@ class IsoPhotApertures():
             mask_inner = aper_inner.to_mask(method='center').to_image(data.shape).astype(bool)
             mask_img = mask_outer & (~mask_inner)
             median_val = np.nanmedian(data[mask_img])
+            std_val    = np.nanstd(data[mask_img])
             s = mask_img & (~np.isfinite(data))
             if s.sum() <= max_nan_frac * mask_img.sum():
-                data_filled[s] = median_val
+                if add_noise:
+                    fill_val = np.random.normal(median_val,std_val,s.sum())
+                else:
+                    fill_val = median_val
+                data_filled[s] = fill_val
             else:
                 pass            
         setattr(self.cutoutdata,apply_to+'_filled',data_filled)

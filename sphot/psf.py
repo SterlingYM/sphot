@@ -20,6 +20,60 @@ from photutils.datasets.images import make_model_image as _make_model_image
 from .data import get_data_annulus
 from .logging import logger
 
+class PSFFitter():
+    ''' A class to perform PSF fitting. '''
+    def __init__(self,cutoutdata):
+        self.cutoutdata = cutoutdata
+        self.psf_sigma = cutoutdata.psf_sigma
+        
+    def fit(self,fit_to='sersic_residual',**kwargs):
+        self.data = getattr(self.cutoutdata,fit_to)
+            
+        x0 = self.cutoutdata.sersic_params_physical['x_0']
+        y0 = self.cutoutdata.sersic_params_physical['y_0']
+        center_mask_params = [x0,y0,self.psf_sigma*2]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            psf_table, resid = iterative_psf_fitting(self.data,
+                                                     self.cutoutdata.psf,
+                                                    psf_sigma = self.psf_sigma,
+                                                    psf_oversample = self.cutoutdata.psf_oversample,
+                                                    threshold_list = np.arange(2.0,4.5,0.5)[::-1],
+                                                    center_mask_params=center_mask_params,
+                                                    **kwargs)
+        psf_model_total = self.data - resid
+        psf_model_total -= np.nanmin(psf_model_total) # PSFs are forced to be positive, so minimum is always zero
+        # TODO: handle the case where all pixels are filled with PSF
+
+        # generate PSF-subtracted data
+        mask = sigma_clip_outside_aperture(resid,
+                                           self.cutoutdata.galaxy_size,clip_sigma=4,
+                                           aper_size_in_r_eff=2,
+                                           plot=True)
+        psf_subtracted_data = self.cutoutdata._rawdata - psf_model_total
+        psf_subtracted_data[mask] = np.nan
+
+        # subtract background (to be consistent)
+        data_annulus = get_data_annulus(psf_subtracted_data,
+                                        5*self.cutoutdata.galaxy_size,plot=False)
+        bkg_std = np.nanstd(data_annulus)
+        psf_subtracted_data_error = np.ones_like(psf_subtracted_data)*bkg_std
+        
+        # make the residual image
+        sersic_modelimg = getattr(self.cutoutdata,'sersic_modelimg',0)
+        residual_img = self.cutoutdata._rawdata - psf_model_total - sersic_modelimg
+        residual_masked = residual_img.copy()
+        residual_masked[mask] = np.nan
+        
+        # save data
+        self.cutoutdata.residual = residual_img
+        self.cutoutdata.residual_masked = residual_masked
+        self.cutoutdata.psf_modelimg = psf_model_total
+        self.cutoutdata.psf_sub_data = psf_subtracted_data 
+        self.cutoutdata.psf_sub_data_error = psf_subtracted_data_error
+        self.cutoutdata.psf_table = psf_table
+        return self.cutoutdata
+
 def make_modelimg(psffitter,shape,psf_shape):
     ''' modified version of photutil's function.
     No background is added.
@@ -73,73 +127,151 @@ def make_modelimg(psffitter,shape,psf_shape):
                                  model_shape=psf_shape,
                                  x_name=x_name, y_name=y_name,
                                  progress_bar=progress_bar)
-        
-    # model_img = np.zeros(shape)
-    # for fit_model in fit_models:
-    #     x0 = fit_model[2]#getattr(fit_model, 'x_0').value
-    #     y0 = fit_model[3]#getattr(fit_model, 'y_0').value
-    #     try:
-    #         slc_lg, _ = overlap_slices(shape, psf_shape, (y0, x0),
-    #                                     mode='trim')
-    #     except Exception:
-    #         continue
-    #     yy, xx = np.mgrid[slc_lg]
-    #     model_img[slc_lg] += fit_model(xx, yy)
     return model_img
 
-class PSFFitter():
-    ''' A class to perform PSF fitting. '''
-    def __init__(self,cutoutdata):
-        self.cutoutdata = cutoutdata
-        self.psf_sigma = cutoutdata.psf_sigma
-        
-    def fit(self,fit_to='sersic_residual',**kwargs):
-        self.data = getattr(self.cutoutdata,fit_to)
-            
-        x0 = self.cutoutdata.sersic_params_physical['x_0']
-        y0 = self.cutoutdata.sersic_params_physical['y_0']
-        center_mask_params = [x0,y0,self.psf_sigma*2]
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            psf_table, resid = iterative_psf_fitting(self.data,
-                                                     self.cutoutdata.psf,
-                                                    psf_sigma = self.psf_sigma,
-                                                    psf_oversample = self.cutoutdata.psf_oversample,
-                                                    threshold_list = np.arange(1,3.2,0.2)[::-1],
-                                                    center_mask_params=center_mask_params,
-                                                    **kwargs)
-        psf_model_total = self.data - resid
-        psf_model_total -= np.nanmin(psf_model_total) # PSFs are forced to be positive, so minimum is always zero
-        # TODO: handle the case where all pixels are filled with PSF
 
-        # generate PSF-subtracted data
-        mask = sigma_clip_outside_aperture(resid,
-                                           self.cutoutdata.galaxy_size,clip_sigma=4,
-                                           aper_size_in_r_eff=2,
-                                           plot=True)
-        psf_subtracted_data = self.cutoutdata._rawdata - psf_model_total
-        psf_subtracted_data[mask] = np.nan
 
-        # subtract background (to be consistent)
-        data_annulus = get_data_annulus(psf_subtracted_data,5*self.cutoutdata.galaxy_size,plot=False)
-        bkg_std = np.nanstd(data_annulus)
-        psf_subtracted_data_bksub = psf_subtracted_data
-        psf_subtracted_data_bksub_error = np.ones_like(psf_subtracted_data)*bkg_std
+def filter_psfphot_results(phot_result,
+                           center_mask_params=None,
+                           cfit_abs_max=0.01,
+                           qfit_max=0.05,
+                           max_relative_error_flux=0.2,
+                           max_dcenter_pix = 3,
+                           cr_init_ratio_max=1,
+                           data_shape=None,
+                           full_output=False,
+                           **kwargs):
+    ''' Filter the PSF photometry results. '''
+    
+    cfit_min,cfit_max = -1 * cfit_abs_max, cfit_abs_max
+    qfit_min,qfit_max = 0, qfit_max
+    
+    s_flags = phot_result['flags'] < 1
+    s_cfit = (phot_result['cfit'] >= cfit_min) & (phot_result['cfit'] <= cfit_max)
+    s_qfit = (phot_result['qfit'] >= qfit_min) & (phot_result['qfit'] <= qfit_max)
+    s_fluxerr = (phot_result['flux_err']/phot_result['flux_fit'] <= max_relative_error_flux)
+    
+    s = s_flags & s_cfit & s_qfit & s_fluxerr
+    s_dict = {
+        's_flags': s_flags,
+        's_cfit':  s_cfit,
+        's_qfit':  s_qfit,
+        's_fluxerr': s_fluxerr
+    }
+    msg = f'\nsources that passed each cut (not cumulative, out of {len(phot_result)}):\n\
+    flags: {s_flags.sum()},\n\
+    cfit: {s_cfit.sum()},\n\
+    qfit: {s_qfit.sum()},\n\
+    flux_err/flux_fit: {s_fluxerr.sum()},\n'
+    
+    if max_dcenter_pix is not None:
+        # distance between initial location and fitted location should be close enough
+        x_init,y_init = phot_result['x_init'],phot_result['y_init']
+        x_fit,y_fit = phot_result['x_fit'],phot_result['y_fit']
+        d_center = np.sqrt((x_init-x_fit)**2 + (y_init-y_fit)**2)
+        s_loc = d_center < max_dcenter_pix
+        s_dict['s_loc'] = s_loc
+        s = s & s_loc
+        msg += f'    location: {int(s_loc.sum())}\n'  
+
+    if cr_init_ratio_max is not None:
+        # ratio of center residual to initial flux (approx) using cr_init_ratio
+        # a metric useful to detect some crazy fits that cause a large residual (but get low-ish cfit and qfit due to large flux fitted)
+        res_cen = phot_result['cfit']*phot_result['flux_fit']
+        flux_init = phot_result['flux_init']
+        cr_init_ratio = res_cen/flux_init 
+        s_residual = cr_init_ratio < cr_init_ratio_max
+        s_dict['s_residual'] = s_residual
+        s = s & s_residual
+        msg += f'    residual: {int(s_residual.sum())}\n'
+    
+    if center_mask_params is not None:
+        x_center,y_center,mask_r = center_mask_params
+        xdist = phot_result['x_fit'] - x_center
+        ydist = phot_result['y_fit'] - y_center
+        s_centermask = (xdist**2 + ydist**2 > mask_r**2)
+        s_dict['s_centermask'] = s_centermask
+        s = s & s_centermask
+        msg += f'    center_mask: {int(s_centermask.sum())}\n'
         
-        # make the residual image
-        sersic_modelimg = getattr(self.cutoutdata,'sersic_modelimg',0)
-        residual_img = self.cutoutdata._rawdata - psf_model_total - sersic_modelimg
-        residual_masked = residual_img.copy()
-        residual_masked[mask] = np.nan
+    if data_shape is not None:
+        x,y = phot_result['x_fit'],phot_result['y_fit']
+        s_edge = (x > 0) & (x < data_shape[1]) & (y > 0) & (y < data_shape[0])
+        s_dict['s_edge'] = s_edge
+        s = s & s_edge
+        msg += f'    edge: {int(s_edge.sum())}\n'    
+    
+    msg += f'Sources that passed all of the above cuts: {int(s.sum())}\n'
+    if full_output:
+        return s, s_dict, msg
+    return s, msg
+
+def _update_filter_criteria(phot_result,min_sources=50,target_passing_fraction=0.5,
+                            maxiter=10,cfit_increment=0.05,qfit_increment=0.05,
+                            **kwargs):
+    ''' update filter criteria for PSF photometry.
+    Determines the filtering criteria should be loosened based on:
+        - the number of sources detected
+        - the number of sources that passed the filter
         
-        # save data
-        self.cutoutdata.residual = residual_img
-        self.cutoutdata.residual_masked = residual_masked
-        self.cutoutdata.psf_modelimg = psf_model_total
-        self.cutoutdata.psf_sub_data = psf_subtracted_data_bksub 
-        self.cutoutdata.psf_sub_data_error = psf_subtracted_data_bksub_error
-        self.cutoutdata.psf_table = psf_table
-        return self.cutoutdata
+    Args:
+        min_sources (int): the minimum number of detected sources required for evaluation. No changes will be made is the number of sources detected is smaller than this.
+        
+    Returns:
+        kwargs (dict): the updated kwargs.
+    '''
+    verbose = kwargs.get('verbose',False)
+    N_src = len(phot_result)
+    
+    # check if we have enough number of sources
+    if N_src < min_sources:
+        return kwargs
+    
+    # set initial values if needed
+    if not hasattr(kwargs,'cfit_abs_max'):
+        kwargs['cfit_abs_max'] = 0.01
+    if not hasattr(kwargs,'qfit_max'):
+        kwargs['qfit_max'] = 0.05
+        
+    # loop to find the right criteria
+    s,s_dict,msg = filter_psfphot_results(phot_result,full_output=True,**kwargs)
+    s_prev = s.sum()
+    for _ in range(maxiter):
+        if s.sum()/N_src > target_passing_fraction:
+            break
+        if verbose:
+            logger.info(f'too many sources are cut ({s.sum()} out of {N_src}). Updating the filter criteria.')
+        # determine which criteria to loosen
+        cfit_pass_frac = s_dict['s_cfit'].sum()/N_src
+        qfit_pass_frac = s_dict['s_qfit'].sum()/N_src
+        if cfit_pass_frac < qfit_pass_frac:
+            kwargs['cfit_abs_max'] = np.round(kwargs['cfit_abs_max'] + cfit_increment,5)
+            if verbose:
+                logger.info(f'cfit_abs_max updated to {kwargs["cfit_abs_max"]}')
+        else:
+            kwargs['qfit_max'] = np.round(kwargs['qfit_max'] + qfit_increment,5)
+            if verbose:
+                logger.info(f'qfit_max updated to {kwargs["qfit_max"]}')
+                
+        # run filtering and see if there is any improvement
+        s,s_dict,msg = filter_psfphot_results(phot_result,full_output=True,**kwargs)
+        if s.sum() <= s_prev:
+            if verbose:
+                logger.info(f'no improvement in the number of sources passed the cut. Stopping the loop.')
+            break
+        s_prev = s.sum()
+    return kwargs
+
+def sigma_clip_outside_aperture(data,r_eff,clip_sigma=4,
+                                aper_size_in_r_eff=1,plot=True):
+    # sigma-clip pixels outside r_eff
+    mask = sigma_clip(data,sigma=clip_sigma).mask
+    aperture = CircularAperture((data.shape[0]/2,data.shape[1]/2),
+                                r_eff*aper_size_in_r_eff)
+    aperture_mask = aperture.to_mask(method='center')
+    aperture_mask_img = aperture_mask.to_image(data.shape).astype(bool)
+    mask[aperture_mask_img] = False
+    return mask # bad pixels are True
 
 def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
                       th=2,Niter=2,fit_shape=(3,3),render_shape=(25,25),
@@ -232,7 +364,10 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
         return None,None,None,None
     
     # repeat psf_iter Niter times to (hopefully) re-fit flagged sources
+    # relax the filter criteria if too many stars are cut during this process
     for _ in range(Niter):
+        # phot_result.to_pandas().to_csv('phot_result_tmp.csv')
+        kwargs = _update_filter_criteria(phot_result,**kwargs)
         s,msg = filter_psfphot_results(phot_result,**kwargs)
         if (s is None) or (s.sum() == 0):
             logger.info(f'No source passed the cut ({len(phot_result)} detection).'+msg)
@@ -257,7 +392,7 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
         logger.info('all sources are flagged.'+msg)
         return None,None,None,None
     if kwargs.get('verbose',False):
-        logger.info('photmoetry filter info:\n'+msg)
+        logger.info('photometry filter info:\n'+msg)
     init_params = QTable()
     init_params['x'] = phot_result['x_fit'].value[s]
     init_params['y'] = phot_result['y_fit'].value[s]
@@ -300,64 +435,10 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
         
     return phot_result, data_bksub, model_img, resid
 
-def filter_psfphot_results(phot_result,
-                           center_mask_params=None,
-                           cfit_abs_max=0.01,
-                           qfit_max=0.05,
-                           max_relative_error_flux=0.2,
-                           data_shape=None,
-                           **kwargs):
-    ''' Filter the PSF photometry results. '''
-    
-    cfit_min,cfit_max = -1 * cfit_abs_max, cfit_abs_max
-    qfit_min,qfit_max = 0, qfit_max
-    
-    s_flags = phot_result['flags'] < 1
-    s_cfit = (phot_result['cfit'] >= cfit_min) & (phot_result['cfit'] <= cfit_max)
-    s_qfit = (phot_result['qfit'] >= qfit_min) & (phot_result['qfit'] <= qfit_max)
-    s_fluxerr = (phot_result['flux_err']/phot_result['flux_fit'] <= max_relative_error_flux)
-    
-    s = s_flags & s_cfit & s_qfit & s_fluxerr
-    msg = f'\nsources that passed each cut (not cumulative, out of {len(phot_result)}):\n\
-    flags: {s_flags.sum()},\n\
-    cfit: {s_cfit.sum()},\n\
-    qfit: {s_qfit.sum()},\n\
-    flux_err/flux_fit: {s_fluxerr.sum()},\n'
-    
-    if center_mask_params is not None:
-        x_center,y_center,mask_r = center_mask_params
-        xdist = phot_result['x_fit'] - x_center
-        ydist = phot_result['y_fit'] - y_center
-        s_centermask = (xdist**2 + ydist**2 > mask_r**2)
-        s = s & s_centermask
-        msg += f'    center_mask: {int(s_centermask.sum())}\n'
-        
-    if data_shape is not None:
-        x,y = phot_result['x_fit'],phot_result['y_fit']
-        s_edge = (x > 0) & (x < data_shape[1]) & (y > 0) & (y < data_shape[0])
-        s = s & s_edge
-        msg += f'    edge: {int(s_edge.sum())}\n'    
-    
-    msg += f'Sources that passed all of the above cuts: {int(s.sum())}\n'
-
-    return s, msg
-
-def sigma_clip_outside_aperture(data,r_eff,clip_sigma=4,
-                                aper_size_in_r_eff=1,plot=True):
-    # sigma-clip pixels outside r_eff
-    mask = sigma_clip(data,sigma=clip_sigma).mask
-    aperture = CircularAperture((data.shape[0]/2,data.shape[1]/2),
-                                r_eff*aper_size_in_r_eff)
-    aperture_mask = aperture.to_mask(method='center')
-    aperture_mask_img = aperture_mask.to_image(data.shape).astype(bool)
-    mask[aperture_mask_img] = False
-    return mask # bad pixels are True
-
 def iterative_psf_fitting(data,psfimg,psf_sigma,psf_oversample,
                           threshold_list,
                           progress=None,
                           progress_text='Running iPSF...',
-                        #   ignore_warnings=True,
                           **kwargs):
     ''' Perform iterative PSF fitting.'''
             
@@ -391,4 +472,3 @@ def iterative_psf_fitting(data,psfimg,psf_sigma,psf_oversample,
     if progress is not None:
         progress.remove_task(progress_psf)
     return phot_result, resid
-        

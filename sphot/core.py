@@ -113,8 +113,10 @@ def run_scalefit(galaxy,filtername,base_params,allow_refit,
     kwargs_sersic_init  = dict(fit_to='data',progress=progress)
     kwargs_sersic_iter  = dict(fit_to='psf_sub_data',progress=progress)
     kwargs_psf          = dict(fit_to='sersic_residual',progress=progress,**kwargs)
-    kwargs_rmsky_sersic = dict(fit_to='residual_masked',remove_from=['sersic_residual','residual_masked','residual'],repeat=3,**kwargs)
-    kwargs_rmsky_psf    = dict(fit_to='residual_masked',remove_from=['psf_sub_data','residual_masked','residual'],repeat=3,**kwargs)
+    kwargs_rmsky_sersic = dict(fit_to='residual_masked',
+                               remove_from=['sersic_residual','residual_masked','residual'],repeat=3,**kwargs)
+    kwargs_rmsky_psf    = dict(fit_to='residual_masked',
+                               remove_from=['psf_sub_data','residual_masked','residual'],repeat=3,**kwargs)
     if allow_refit:
         kwargs_sersic_refit = dict(fit_to='psf_sub_data',max_iter=20,progress=progress) 
         kwargs_sersic_refit_iter = dict(fit_to='psf_sub_data',max_iter=10,progress=progress)
