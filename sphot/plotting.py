@@ -17,7 +17,7 @@ from astropy.modeling import models
 
 def astroplot(data,percentiles=[1,99.9],cmap='viridis',
               ax=None,
-              offset=0,norm=None,figsize=(5,5),title=None,set_bad='r'):
+              offset=0,norm=None,figsize=(5,5),title=None,set_bad='r',**kwargs):
     ''' plot 2d data in the log scale. Automatically takes care of the negative values. '''
     if (data is None) or np.isnan(data).all():
         raise ValueError('Data is empty!')
@@ -179,12 +179,15 @@ def plot_profile2d(data,ax=None,fig=None,lower_limit_percentile=20,left=False,**
         ax_side.invert_xaxis()
     return norm,offset
         
-def plot_sphot_results(cutoutdata):
-    rawdata_bksub = cutoutdata._rawdata - cutoutdata._bkg_level
+def plot_sphot_results(cutoutdata,right_attr='psf_sub_data',**kwargs):
+    sky_model = getattr(cutoutdata,'sky_model',None)
+    if sky_model is None:
+        sky_model = cutoutdata._bkg_level
+    rawdata_bksub = cutoutdata._rawdata - sky_model.mean() # cutoutdata._bkg_level
     bestfit_sersic_img = cutoutdata.sersic_modelimg
     sersic_residual = cutoutdata.sersic_residual
     psf_model_total = cutoutdata.psf_modelimg
-    psf_subtracted_data_bksub = cutoutdata.psf_sub_data
+    psf_subtracted_data_bksub = getattr(cutoutdata,right_attr)
                   
     fig = plt.figure(figsize=(10,10))
     ax0 = fig.add_axes([-0.45,0.55,0.55,0.55])
@@ -199,13 +202,16 @@ def plot_sphot_results(cutoutdata):
                  transform=ax_name.transAxes,
                  ha='center',va='center',fontsize=28,color='k')
     
-    cmap='viridis'
+    cmap = kwargs.get('cmap','viridis')
     norm,offset = astroplot(rawdata_bksub,ax=ax1,percentiles=[0.1,99.9],cmap=cmap)
-    plot_profile2d(rawdata_bksub,ax0,fig,cmap=cmap,left=True,norm=norm,offset=offset)
-    astroplot(bestfit_sersic_img,ax=ax2,norm=norm,offset=offset,cmap=cmap)
-    astroplot(sersic_residual,ax=ax3,norm=norm,offset=offset,cmap=cmap)
-    astroplot(psf_model_total,ax=ax4,norm=norm,offset=offset,cmap=cmap)
-    plot_profile2d(psf_subtracted_data_bksub,ax5,fig,cmap=cmap,norm=norm,offset=offset)
+    kwargs['norm'] = norm
+    kwargs['offset'] = offset
+    kwargs['cmap'] = cmap
+    plot_profile2d(rawdata_bksub,ax0,fig,left=True,**kwargs)
+    astroplot(bestfit_sersic_img,ax=ax2,**kwargs)
+    astroplot(sersic_residual,ax=ax3,**kwargs)
+    astroplot(psf_model_total,ax=ax4,**kwargs)
+    plot_profile2d(psf_subtracted_data_bksub,ax5,fig,**kwargs)
 
     arrowprops0 = dict(arrowstyle="simple",lw=0,fc='dodgerblue')
     arrowprops1 = dict(arrowstyle="simple",connectionstyle="arc3,rad=-0.3",
@@ -231,8 +237,8 @@ def plot_sphot_results(cutoutdata):
     ax4.annotate('remove\nPSF',xy=(0.5,1.65), xycoords='axes fraction', ha='center', va='center', fontsize=25)
 
     ax0.text(0.1,0.88,'A',transform=ax0.transAxes,ha='center',va='center',fontsize=30,color='w')
-    ax1.text(0.1,0.88,'A',transform=ax1.transAxes,ha='center',va='center',fontsize=30,color='w')
+    ax1.text(0.1,0.88,'A\'',transform=ax1.transAxes,ha='center',va='center',fontsize=30,color='w')
     ax2.text(0.1,0.88,'B',transform=ax2.transAxes,ha='center',va='center',fontsize=30,color='w')
     ax3.text(0.3,0.88,'C: A-B',transform=ax3.transAxes,ha='center',va='center',fontsize=30,color='w')
     ax4.text(0.1,0.88,'D',transform=ax4.transAxes,ha='center',va='center',fontsize=30,color='w')
-    ax5.text(0.2,0.88,'E: A-D',transform=ax5.transAxes,ha='center',va='center',fontsize=30,color='w')
+    ax5.text(0.2,0.88,'S: A-D',transform=ax5.transAxes,ha='center',va='center',fontsize=30,color='w')

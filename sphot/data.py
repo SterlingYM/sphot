@@ -243,11 +243,16 @@ class CutoutData():
         
     def remove_sky(self,fit_to='residual_masked',remove_from='psf_sub_data',**kwargs):
         N_repeat = kwargs.get('repeat',1)
+        
+        # sky model = sum of all sky models fitted during the iterations
+        sky_model_total = np.zeros_like(self.data)
         for _ in range(N_repeat):
             self.fit_sky(fit_to=fit_to,**kwargs)
+            sky_model_total += self.sky_model
             for attr in np.atleast_1d(np.squeeze(remove_from)):
                 _data = getattr(self,attr)
                 setattr(self,attr,_data-self.sky_model)    
+        self.sky_model = sky_model_total
     
     def fit_sky(self,fit_to='residual_masked',poly_deg=1,
                 radius_in=7,width=7,plot=False,**kwargs):
