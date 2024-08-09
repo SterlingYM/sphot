@@ -337,6 +337,7 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
         model_img (2d array): the model image.
         resid (2d array): the residual image.
     """    
+    verbose = kwargs.get('verbose',False)
     # tools
     bkgrms = MADStdBackgroundRMS()
     mmm_bkg = MMMBackground()

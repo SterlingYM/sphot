@@ -8,6 +8,7 @@ import sys
 import warnings
 from rich.progress import (Progress, TimeElapsedColumn, 
                            TimeRemainingColumn, BarColumn, TextColumn)
+from rich import get_console
 import logging
 import matplotlib.pyplot as plt
 
@@ -28,6 +29,7 @@ def showprogress(func):
                 logger.info('console object detected: switching output to given console')
             else:
                 logger.info('console object is not detected: using the standard output')
+                console = get_console()
                 
             # initialize progress bar object
             progress =  Progress(
@@ -53,6 +55,9 @@ def run_basefit(galaxy,base_filter,
                N_mainloop_iter,
                progress=None,
                verbose=False,plot=False,**kwargs):
+    kwargs['verbose'] = verbose
+    kwargs['plot'] = plot
+    
     # convenience kwargs
     kwargs_sersic_init  = dict(fit_to='data',max_iter=20,progress=progress)
     kwargs_sersic_init2 = dict(fit_to='psf_sub_data',method='iterative_NM',max_iter=30,progress=progress)
@@ -110,6 +115,9 @@ def run_scalefit(galaxy,filtername,base_params,allow_refit,
                N_mainloop_iter,
                progress=None,
                verbose=False,plot=False,**kwargs):
+    kwargs['verbose'] = verbose
+    kwargs['plot'] = plot
+    
     # convenience kwargs
     kwargs_sersic_init  = dict(fit_to='data',progress=progress)
     kwargs_sersic_iter  = dict(fit_to='psf_sub_data',progress=progress)

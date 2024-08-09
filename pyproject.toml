@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sphot"
+version = "0.1"
+description = "A Python package for photometry and astrophysics"
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "matplotlib>=3.8",
+    "pandas>=2.1",
+    "astropy>=6.0",
+    "photutils>=1.13",
+    "petrofit>=0.5",
+    "h5py>=3.10",
+    "tqdm>=4.66",
+    "csaps>=1.1.0",
+    "opencv-python>4.9",
+    "scikit-image>=0.22",
+    "rich>=13.7"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]  # list of folders that contain the packages (["."] by default)
+include = ["sphot"]  # package names should match these glob patterns (["*"] by default)
+exclude = []  # exclude packages matching these glob patterns (empty by default)
+namespaces = false  # to disable scanning PEP 420 namespaces (true by default)
+
+[project.scripts]
+run_sphot = "sphot.run_sphot:main"
