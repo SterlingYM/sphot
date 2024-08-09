@@ -131,7 +131,8 @@ def plot_sersicfit_result(data,data_annulus,_img):
     ax_left2.set_yticks([])
     ax_left2.axis('off')
     
-def plot_profile2d(data,ax=None,fig=None,lower_limit_percentile=20,left=False,**kwargs):
+def plot_profile2d(data,ax=None,fig=None,lower_limit_percentile=20,
+                   left=False,**kwargs):
     if ax is None:
         fig,ax = plt.subplots(1,1,figsize=(8,8))
     elif fig is None:

@@ -27,18 +27,38 @@ class PSFFitter():
         self.psf_sigma = cutoutdata.psf_sigma
         
     def fit(self,fit_to='sersic_residual',**kwargs):
+        ''' Perform PSF fitting. 
+        This function calls iterative_psf_fitting, which wraps our main function do_psf_photometry. 
+        The role of iterative_psf_fitting is to change the detection threshold level so that the PSF fitter does not end up fitting >1000 sources at the same time in a highly crowded field.
+        
+        Args:
+            fit_to (str): the data to fit the PSF to. An attribute of this name needs to exist. A few examples:
+                - 'sersic_residual': the residual image after sersic fitting (default)
+                - 'residual': the residual image after PSF fitting.
+                - 'data': the original data.
+            kwargs (dict): additional kwargs to pass to do_psf_photometry.
+            
+        Returns:
+            cutoutdata (CutoutData): the updated cutoutdata object. Updates are applied in-place, so users don't need to grab this for typical use cases.
+        '''
         self.data = getattr(self.cutoutdata,fit_to)
             
         x0 = self.cutoutdata.sersic_params_physical['x_0']
         y0 = self.cutoutdata.sersic_params_physical['y_0']
         center_mask_params = [x0,y0,self.psf_sigma*2]
+        th_min = kwargs.get('th_min',1.5)
+        th_max = kwargs.get('th_max',4.0)
+        th_increment = kwargs.get('th_increment',0.5)
+        
+        # perform PSF fitting
+        threshold_list = np.arange(th_min,th_max+th_increment,th_increment)[::-1]
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             psf_table, resid = iterative_psf_fitting(self.data,
                                                      self.cutoutdata.psf,
                                                     psf_sigma = self.psf_sigma,
                                                     psf_oversample = self.cutoutdata.psf_oversample,
-                                                    threshold_list = np.arange(2.0,4.5,0.5)[::-1],
+                                                    threshold_list = threshold_list,
                                                     center_mask_params=center_mask_params,
                                                     **kwargs)
         psf_model_total = self.data - resid
@@ -235,7 +255,11 @@ def _update_filter_criteria(phot_result,min_sources=50,target_passing_fraction=0
         
     # loop to find the right criteria
     s,s_dict,msg = filter_psfphot_results(phot_result,full_output=True,**kwargs)
+    
+    # initialize stopping criteria
     s_prev = s.sum()
+    s_prev_prev = s_prev
+    init_run =True
     for _ in range(maxiter):
         if s.sum()/N_src > target_passing_fraction:
             break
@@ -255,11 +279,13 @@ def _update_filter_criteria(phot_result,min_sources=50,target_passing_fraction=0
                 
         # run filtering and see if there is any improvement
         s,s_dict,msg = filter_psfphot_results(phot_result,full_output=True,**kwargs)
-        if s.sum() <= s_prev:
+        if s.sum() <= s_prev and s_prev_prev == s_prev and not init_run:
             if verbose:
                 logger.info(f'no improvement in the number of sources passed the cut. Stopping the loop.')
             break
+        s_prev_prev = s_prev
         s_prev = s.sum()
+        init_run = False
     return kwargs
 
 def sigma_clip_outside_aperture(data,r_eff,clip_sigma=4,
@@ -370,7 +396,9 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
         kwargs = _update_filter_criteria(phot_result,**kwargs)
         s,msg = filter_psfphot_results(phot_result,**kwargs)
         if (s is None) or (s.sum() == 0):
-            logger.info(f'No source passed the cut ({len(phot_result)} detection).'+msg)
+            logger.info(f'No source passed the cut ({len(phot_result)} detection).')
+            if verbose:
+                logger.info(msg)
             return None,None,None,None
         init_params = QTable()
         init_params['x'] = phot_result['x_fit'].value[s]
