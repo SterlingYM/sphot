@@ -51,7 +51,8 @@ def showprogress(func):
 def run_basefit(galaxy,base_filter,
                fit_complex_model,blur_psf,
                N_mainloop_iter,
-               progress=None,**kwargs):
+               progress=None,
+               verbose=False,plot=False,**kwargs):
     # convenience kwargs
     kwargs_sersic_init  = dict(fit_to='data',max_iter=20,progress=progress)
     kwargs_sersic_init2 = dict(fit_to='psf_sub_data',method='iterative_NM',max_iter=30,progress=progress)
@@ -108,7 +109,7 @@ def run_scalefit(galaxy,filtername,base_params,allow_refit,
                fit_complex_model,blur_psf,
                N_mainloop_iter,
                progress=None,
-               **kwargs):
+               verbose=False,plot=False,**kwargs):
     # convenience kwargs
     kwargs_sersic_init  = dict(fit_to='data',progress=progress)
     kwargs_sersic_iter  = dict(fit_to='psf_sub_data',progress=progress)
