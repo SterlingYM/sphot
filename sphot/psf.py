@@ -9,7 +9,7 @@ from astropy.nddata import overlap_slices
 from astropy.table import QTable, vstack
 from astropy.stats import sigma_clip
 
-from photutils.aperture import CircularAperture
+from photutils.aperture import CircularAperture, EllipticalAperture
 from photutils.psf import (SourceGrouper, IterativePSFPhotometry, 
                            PSFPhotometry, FittableImageModel)
 from photutils.detection import DAOStarFinder
@@ -67,8 +67,8 @@ class PSFFitter():
 
         # generate PSF-subtracted data
         mask = sigma_clip_outside_aperture(resid,
-                                           self.cutoutdata.galaxy_size,clip_sigma=4,
-                                           aper_size_in_r_eff=2,
+                                           self.cutoutdata.sersic_params_physical,clip_sigma=4,
+                                           aper_size_in_r_eff=1,
                                            plot=True)
         psf_subtracted_data = self.cutoutdata._rawdata - psf_model_total
         psf_subtracted_data[mask] = np.nan
@@ -288,15 +288,25 @@ def _update_filter_criteria(phot_result,min_sources=50,target_passing_fraction=0
         init_run = False
     return kwargs
 
-def sigma_clip_outside_aperture(data,r_eff,clip_sigma=4,
+def sigma_clip_outside_aperture(data,sersic_params_physical,clip_sigma=4,
                                 aper_size_in_r_eff=1,plot=True):
     # sigma-clip pixels outside r_eff
     mask = sigma_clip(data,sigma=clip_sigma).mask
-    aperture = CircularAperture((data.shape[0]/2,data.shape[1]/2),
-                                r_eff*aper_size_in_r_eff)
+    
+    # exclude pixels inside the 1-Reff isophot aperture
+    a = sersic_params_physical['r_eff'] * aper_size_in_r_eff
+    x_0 = sersic_params_physical['x_0']
+    y_0 = sersic_params_physical['y_0']
+    ellip = sersic_params_physical['ellip']
+    theta = sersic_params_physical['theta']
+    b = (1 - ellip) * a
+    aperture = EllipticalAperture((x_0, y_0), a, b, theta=theta)
+    # aperture = CircularAperture((data.shape[0]/2,data.shape[1]/2),
+    #                             r_eff*aper_size_in_r_eff)
     aperture_mask = aperture.to_mask(method='center')
     aperture_mask_img = aperture_mask.to_image(data.shape).astype(bool)
     mask[aperture_mask_img] = False
+    
     return mask # bad pixels are True
 
 def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
