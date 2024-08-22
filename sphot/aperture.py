@@ -168,7 +168,8 @@ class IsoPhotApertures():
                     fill_val = median_val
                 data_filled[s] = fill_val
             else:
-                pass            
+                # TODO: add replace_with option?
+                pass
         setattr(self.cutoutdata,apply_to+'_filled',data_filled)
 
     def measure_flux(self,measure_on='psf_sub_data'):

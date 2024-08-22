@@ -180,7 +180,7 @@ def plot_profile2d(data,ax=None,fig=None,lower_limit_percentile=20,
         ax_side.invert_xaxis()
     return norm,offset
         
-def plot_sphot_results(cutoutdata,right_attr='psf_sub_data',**kwargs):
+def plot_sphot_results(cutoutdata,right_attr='psf_sub_data',dpi=100,**kwargs):
     sky_model = getattr(cutoutdata,'sky_model',None)
     if sky_model is None:
         sky_model = cutoutdata._bkg_level
@@ -190,7 +190,7 @@ def plot_sphot_results(cutoutdata,right_attr='psf_sub_data',**kwargs):
     psf_model_total = cutoutdata.psf_modelimg
     psf_subtracted_data_bksub = getattr(cutoutdata,right_attr)
                   
-    fig = plt.figure(figsize=(10,10))
+    fig = plt.figure(figsize=(10,10),dpi=dpi)
     ax0 = fig.add_axes([-0.45,0.55,0.55,0.55])
     ax4 = fig.add_axes([0.14,0.66,0.25,0.25])
     ax3 = fig.add_axes([0.4,0.4,0.25,0.25])
