@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PSF photometry &mdash; Sphot  documentation</title>
+  <title>PSF fitting &mdash; Sphot  documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=80d5e7a1" />
       <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
 
@@ -45,9 +45,10 @@
   </form>
 </div>
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+              <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../notebooks.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorials.html">Basic Usage</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API documentation</span></p>
 <ul class="current">
@@ -55,7 +56,7 @@
 <li class="toctree-l1"><a class="reference internal" href="data.html">Data objects</a></li>
 <li class="toctree-l1"><a class="reference internal" href="plotting.html">Plotting</a></li>
 <li class="toctree-l1"><a class="reference internal" href="fitting.html">Sersic model fitting</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">PSF photometry</a><ul>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">PSF fitting</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#sphot.psf.PSFFitter"><code class="docutils literal notranslate"><span class="pre">PSFFitter</span></code></a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#sphot.psf.PSFFitter.fit"><code class="docutils literal notranslate"><span class="pre">PSFFitter.fit()</span></code></a></li>
 </ul>
@@ -85,7 +86,7 @@
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
       <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
-      <li class="breadcrumb-item active">PSF photometry</li>
+      <li class="breadcrumb-item active">PSF fitting</li>
       <li class="wy-breadcrumbs-aside">
             <a href="../_sources/api/psf.rst.txt" rel="nofollow"> View page source</a>
       </li>
@@ -96,15 +97,33 @@
            <div itemprop="articleBody">
              
   <section id="module-sphot.psf">
-<span id="psf-photometry"></span><h1>PSF photometry<a class="headerlink" href="#module-sphot.psf" title="Link to this heading"></a></h1>
+<span id="psf-fitting"></span><h1>PSF fitting<a class="headerlink" href="#module-sphot.psf" title="Link to this heading"></a></h1>
 <dl class="py class">
 <dt class="sig sig-object py" id="sphot.psf.PSFFitter">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">sphot.psf.</span></span><span class="sig-name descname"><span class="pre">PSFFitter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cutoutdata</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.psf.PSFFitter" title="Link to this definition"></a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>A class to perform PSF fitting.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="sphot.psf.PSFFitter.fit">
 <span class="sig-name descname"><span class="pre">fit</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fit_to</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'sersic_residual'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.psf.PSFFitter.fit" title="Link to this definition"></a></dt>
-<dd></dd></dl>
+<dd><p>Perform PSF fitting.
+This function calls iterative_psf_fitting, which wraps our main function do_psf_photometry.
+The role of iterative_psf_fitting is to change the detection threshold level so that the PSF fitter does not end up fitting &gt;1000 sources at the same time in a highly crowded field.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fit_to</strong> (<em>str</em>) -- the data to fit the PSF to. An attribute of this name needs to exist. A few examples:
+- 'sersic_residual': the residual image after sersic fitting (default)
+- 'residual': the residual image after PSF fitting.
+- 'data': the original data.</p></li>
+<li><p><strong>kwargs</strong> (<em>dict</em>) -- additional kwargs to pass to do_psf_photometry.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>cutoutdata</strong> (<em>CutoutData</em>) -- the updated cutoutdata object. Updates are applied in-place, so users don't need to grab this for typical use cases.</p>
+</dd>
+</dl>
+</dd></dl>
 
 </dd></dl>
 
@@ -154,7 +173,7 @@ This function does the following:</p>
 
 <dl class="py function">
 <dt class="sig sig-object py" id="sphot.psf.filter_psfphot_results">
-<span class="sig-prename descclassname"><span class="pre">sphot.psf.</span></span><span class="sig-name descname"><span class="pre">filter_psfphot_results</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">phot_result</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">center_mask_params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cfit_abs_max</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.01</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">qfit_max</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_relative_error_flux</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_shape</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.psf.filter_psfphot_results" title="Link to this definition"></a></dt>
+<span class="sig-prename descclassname"><span class="pre">sphot.psf.</span></span><span class="sig-name descname"><span class="pre">filter_psfphot_results</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">phot_result</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">center_mask_params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cfit_abs_max</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.01</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">qfit_max</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_relative_error_flux</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_dcenter_pix</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cr_init_ratio_max</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_shape</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">full_output</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.psf.filter_psfphot_results" title="Link to this definition"></a></dt>
 <dd><p>Filter the PSF photometry results.</p>
 </dd></dl>
 
@@ -181,7 +200,7 @@ No background is added.</p>
 
 <dl class="py function">
 <dt class="sig sig-object py" id="sphot.psf.sigma_clip_outside_aperture">
-<span class="sig-prename descclassname"><span class="pre">sphot.psf.</span></span><span class="sig-name descname"><span class="pre">sigma_clip_outside_aperture</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">r_eff</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">clip_sigma</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">aper_size_in_r_eff</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.psf.sigma_clip_outside_aperture" title="Link to this definition"></a></dt>
+<span class="sig-prename descclassname"><span class="pre">sphot.psf.</span></span><span class="sig-name descname"><span class="pre">sigma_clip_outside_aperture</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sersic_params_physical</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">clip_sigma</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">aper_size_in_r_eff</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plot</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.psf.sigma_clip_outside_aperture" title="Link to this definition"></a></dt>
 <dd></dd></dl>
 
 </section>

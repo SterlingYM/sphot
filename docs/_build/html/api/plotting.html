@@ -45,9 +45,10 @@
   </form>
 </div>
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+              <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../notebooks.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorials.html">Basic Usage</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API documentation</span></p>
 <ul class="current">
@@ -61,7 +62,7 @@
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="fitting.html">Sersic model fitting</a></li>
-<li class="toctree-l1"><a class="reference internal" href="psf.html">PSF photometry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="psf.html">PSF fitting</a></li>
 <li class="toctree-l1"><a class="reference internal" href="aperture.html">Aperture photometry</a></li>
 <li class="toctree-l1"><a class="reference internal" href="utils.html">Utilities</a></li>
 </ul>
@@ -94,7 +95,7 @@
 <span id="plotting"></span><h1>Plotting<a class="headerlink" href="#module-sphot.plotting" title="Link to this heading"></a></h1>
 <dl class="py function">
 <dt class="sig sig-object py" id="sphot.plotting.astroplot">
-<span class="sig-prename descclassname"><span class="pre">sphot.plotting.</span></span><span class="sig-name descname"><span class="pre">astroplot</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">percentiles</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[1,</span> <span class="pre">99.9]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cmap</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'viridis'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ax</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">offset</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">norm</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">figsize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(5,</span> <span class="pre">5)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">title</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">set_bad</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'r'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.plotting.astroplot" title="Link to this definition"></a></dt>
+<span class="sig-prename descclassname"><span class="pre">sphot.plotting.</span></span><span class="sig-name descname"><span class="pre">astroplot</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">percentiles</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[1,</span> <span class="pre">99.9]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cmap</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'viridis'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ax</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">offset</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">norm</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">figsize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(5,</span> <span class="pre">5)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">title</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">set_bad</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'r'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.plotting.astroplot" title="Link to this definition"></a></dt>
 <dd><p>plot 2d data in the log scale. Automatically takes care of the negative values.</p>
 </dd></dl>
 
@@ -122,7 +123,7 @@
 
 <dl class="py function">
 <dt class="sig sig-object py" id="sphot.plotting.plot_sphot_results">
-<span class="sig-prename descclassname"><span class="pre">sphot.plotting.</span></span><span class="sig-name descname"><span class="pre">plot_sphot_results</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cutoutdata</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.plotting.plot_sphot_results" title="Link to this definition"></a></dt>
+<span class="sig-prename descclassname"><span class="pre">sphot.plotting.</span></span><span class="sig-name descname"><span class="pre">plot_sphot_results</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cutoutdata</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">right_attr</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'psf_sub_data'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dpi</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.plotting.plot_sphot_results" title="Link to this definition"></a></dt>
 <dd></dd></dl>
 
 </section>

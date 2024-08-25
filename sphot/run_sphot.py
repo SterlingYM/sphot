@@ -6,11 +6,11 @@ Run the basic sphot pipeline on a single galaxy.
 This script automatically detects the running environment (e.g., Slurm array job or local machine) and switches the logging output accordingly.
 
 Usage:
-    python run_sphot.py data_file.h5  [--out_folder=foldername] # run sphot on a new data file
-    python run_sphot.py sphot_file.h5 --rerun_all      # rerun both basefit and scalefit 
-    python run_sphot.py sphot_file.h5 --continue       # continue scalefit on existing sphot file if necessary 
-    python run_sphot.py sphot_file.h5 --rerun_basefit  # rerun basefit on existing sphot file 
-    python run_sphot.py sphot_file.h5 --rerun_scalefit # rerun all scalefit on existing sphot file
+    run_sphot data_file.h5  [--out_folder=foldername] # run sphot on a new data file
+    run_sphot sphot_file.h5 --rerun_all      # rerun both basefit and scalefit 
+    run_sphot sphot_file.h5 --continue       # continue scalefit on existing sphot file if necessary 
+    run_sphot sphot_file.h5 --rerun_basefit  # rerun basefit on existing sphot file 
+    run_sphot sphot_file.h5 --rerun_scalefit # rerun all scalefit on existing sphot file
 
 '''
 

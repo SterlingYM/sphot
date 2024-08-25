@@ -55,7 +55,7 @@ autodoc_mock_imports = [
     'tqdm','tqdm.auto',
     'csaps','skimage',
     'matplotlib','matplotlib.pyplot','matplotlib.colors','matplotlib.cm',
-    'rich','rich.progress','rich.table','rich.console',]
+    'rich','rich.progress','rich.table','rich.console','rich.logging']
 for mod in autodoc_mock_imports:
     sys.modules[mod] = MagicMock()
 

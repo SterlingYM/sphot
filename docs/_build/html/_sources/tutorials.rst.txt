@@ -1,0 +1,11 @@
+Basic Usage
+=========
+
+.. toctree::
+   :maxdepth: 2
+
+   notebooks/commandline.ipynb
+   notebooks/core_modules.ipynb
+   notebooks/make_your_recipe.ipynb
+   notebooks/photometry.ipynb
+   notebooks/visualization.ipynb

@@ -68,7 +68,7 @@ class PSFFitter():
         # generate PSF-subtracted data
         mask = sigma_clip_outside_aperture(resid,
                                            self.cutoutdata.sersic_params_physical,clip_sigma=4,
-                                           aper_size_in_r_eff=1,
+                                           aper_size_in_r_eff=1.5,
                                            plot=True)
         psf_subtracted_data = self.cutoutdata._rawdata - psf_model_total
         psf_subtracted_data[mask] = np.nan

@@ -1,4 +1,4 @@
-PSF photometry
+PSF fitting
 =================
 
 .. automodule:: sphot.psf

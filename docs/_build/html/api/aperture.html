@@ -23,7 +23,7 @@
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="Utilities" href="utils.html" />
-    <link rel="prev" title="PSF photometry" href="psf.html" /> 
+    <link rel="prev" title="PSF fitting" href="psf.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -45,9 +45,10 @@
   </form>
 </div>
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+              <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../notebooks.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorials.html">Basic Usage</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API documentation</span></p>
 <ul class="current">
@@ -55,7 +56,7 @@
 <li class="toctree-l1"><a class="reference internal" href="data.html">Data objects</a></li>
 <li class="toctree-l1"><a class="reference internal" href="plotting.html">Plotting</a></li>
 <li class="toctree-l1"><a class="reference internal" href="fitting.html">Sersic model fitting</a></li>
-<li class="toctree-l1"><a class="reference internal" href="psf.html">PSF photometry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="psf.html">PSF fitting</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Aperture photometry</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#sphot.aperture.CutoutDataPhotometry"><code class="docutils literal notranslate"><span class="pre">CutoutDataPhotometry</span></code></a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#sphot.aperture.CutoutDataPhotometry.calc_mag"><code class="docutils literal notranslate"><span class="pre">CutoutDataPhotometry.calc_mag()</span></code></a></li>
@@ -73,6 +74,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#sphot.aperture.IsoPhotApertures.plot"><code class="docutils literal notranslate"><span class="pre">IsoPhotApertures.plot()</span></code></a></li>
 </ul>
 </li>
+<li class="toctree-l2"><a class="reference internal" href="#sphot.aperture.fill_nans"><code class="docutils literal notranslate"><span class="pre">fill_nans()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="#sphot.aperture.prepare_blurring_kernel"><code class="docutils literal notranslate"><span class="pre">prepare_blurring_kernel()</span></code></a></li>
 </ul>
 </li>
@@ -116,7 +118,7 @@
 
 <dl class="py method">
 <dt class="sig sig-object py" id="sphot.aperture.CutoutDataPhotometry.measure_flux">
-<span class="sig-name descname"><span class="pre">measure_flux</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">measure_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'psf_sub_data'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.aperture.CutoutDataPhotometry.measure_flux" title="Link to this definition"></a></dt>
+<span class="sig-name descname"><span class="pre">measure_flux</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">measure_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'psf_sub_data'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">error_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.aperture.CutoutDataPhotometry.measure_flux" title="Link to this definition"></a></dt>
 <dd><p>perform aperture photometry using pre-constructed isophotal apertures</p>
 </dd></dl>
 
@@ -153,7 +155,7 @@
 
 <dl class="py method">
 <dt class="sig sig-object py" id="sphot.aperture.IsoPhotApertures.create_apertures">
-<span class="sig-name descname"><span class="pre">create_apertures</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fit_to='sersic_modelimg'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">frac_enc=&lt;MagicMock</span> <span class="pre">name='mock.arange()'</span> <span class="pre">id='4592262288'&gt;</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.aperture.IsoPhotApertures.create_apertures" title="Link to this definition"></a></dt>
+<span class="sig-name descname"><span class="pre">create_apertures</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fit_to='sersic_modelimg'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">frac_enc=&lt;MagicMock</span> <span class="pre">name='mock.arange()'</span> <span class="pre">id='4397496208'&gt;</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.aperture.IsoPhotApertures.create_apertures" title="Link to this definition"></a></dt>
 <dd><p>create isophotal apertures, equally spaced in the surface brightness levels</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
@@ -167,7 +169,7 @@
 
 <dl class="py method">
 <dt class="sig sig-object py" id="sphot.aperture.IsoPhotApertures.fill_nans">
-<span class="sig-name descname"><span class="pre">fill_nans</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">apply_to</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'psf_sub_data'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fill_method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'noise'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_nan_frac</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.aperture.IsoPhotApertures.fill_nans" title="Link to this definition"></a></dt>
+<span class="sig-name descname"><span class="pre">fill_nans</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">apply_to</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'psf_sub_data'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fill_method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'median'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_nan_frac</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">add_noise</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.aperture.IsoPhotApertures.fill_nans" title="Link to this definition"></a></dt>
 <dd><p>fill in NaN values in the data. creates a new attribute with '_filled' suffix</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
@@ -178,7 +180,7 @@
 
 <dl class="py method">
 <dt class="sig sig-object py" id="sphot.aperture.IsoPhotApertures.get_aper_at">
-<span class="sig-name descname"><span class="pre">get_aper_at</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">petro</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flux_frac</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.aperture.IsoPhotApertures.get_aper_at" title="Link to this definition"></a></dt>
+<span class="sig-name descname"><span class="pre">get_aper_at</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">petro</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flux_frac</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">x_attr</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'semi_major_axes'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.aperture.IsoPhotApertures.get_aper_at" title="Link to this definition"></a></dt>
 <dd></dd></dl>
 
 <dl class="py method">
@@ -200,8 +202,25 @@
 </dd></dl>
 
 <dl class="py function">
+<dt class="sig sig-object py" id="sphot.aperture.fill_nans">
+<span class="sig-prename descclassname"><span class="pre">sphot.aperture.</span></span><span class="sig-name descname"><span class="pre">fill_nans</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">galaxy</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">apertures</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">apply_to</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'psf_sub_data'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">replace_with</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'sersic_modelimg'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_nan_frac</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.aperture.fill_nans" title="Link to this definition"></a></dt>
+<dd><p>fill in NaN values in the data using median of the finite pixels within annulus defined by consequtive apertures.
+Creates a new attribute with '_filled' suffix.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>galaxy</strong> (<a class="reference internal" href="data.html#sphot.data.MultiBandCutout" title="sphot.data.MultiBandCutout"><em>MultiBandCutout</em></a>) -- the galaxy object</p></li>
+<li><p><strong>apertures</strong> (<em>list</em>) -- a list of apertures to define the annulus</p></li>
+<li><p><strong>apply_to</strong> (<em>str</em><em> or </em><em>list</em><em> of </em><em>str</em>) -- the attributes of the cutoutdata to fill NaNs in</p></li>
+<li><p><strong>replace_with</strong> (<em>str</em>) -- the attribute to use as a reference for filling NaNs if the fraction of NaNs is too high</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
 <dt class="sig sig-object py" id="sphot.aperture.prepare_blurring_kernel">
-<span class="sig-prename descclassname"><span class="pre">sphot.aperture.</span></span><span class="sig-name descname"><span class="pre">prepare_blurring_kernel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">galaxy</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filt</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blur_to</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">window=&lt;MagicMock</span> <span class="pre">name='mock.TopHatWindow()'</span> <span class="pre">id='4592209104'&gt;</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.aperture.prepare_blurring_kernel" title="Link to this definition"></a></dt>
+<span class="sig-prename descclassname"><span class="pre">sphot.aperture.</span></span><span class="sig-name descname"><span class="pre">prepare_blurring_kernel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">galaxy</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filt</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blur_to</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">window=&lt;MagicMock</span> <span class="pre">name='mock.TopHatWindow()'</span> <span class="pre">id='4397404560'&gt;</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sphot.aperture.prepare_blurring_kernel" title="Link to this definition"></a></dt>
 <dd><p>Create a PSF-matching kernel</p>
 </dd></dl>
 
@@ -211,7 +230,7 @@
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="psf.html" class="btn btn-neutral float-left" title="PSF photometry" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="psf.html" class="btn btn-neutral float-left" title="PSF fitting" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
         <a href="utils.html" class="btn btn-neutral float-right" title="Utilities" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 

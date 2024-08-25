@@ -24,7 +24,7 @@
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Tutorials" href="notebooks.html" /> 
+    <link rel="next" title="Before you start - a quick look at Sphot" href="notebooks/quick_look.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -46,9 +46,16 @@
   </form>
 </div>
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+              <p class="caption" role="heading"><span class="caption-text">Welcome!</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Home</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="notebooks.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="notebooks/quick_look.html">Before you start - a quick look at Sphot</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rst/installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rst/tutorials.html">Basic Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rst/tutorial_advanced.html">Advanced Usages</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API documentation</span></p>
 <ul>
@@ -56,7 +63,7 @@
 <li class="toctree-l1"><a class="reference internal" href="api/data.html">Data objects</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/plotting.html">Plotting</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/fitting.html">Sersic model fitting</a></li>
-<li class="toctree-l1"><a class="reference internal" href="api/psf.html">PSF photometry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/psf.html">PSF fitting</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/aperture.html">Aperture photometry</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/utils.html">Utilities</a></li>
 </ul>
@@ -87,96 +94,60 @@
              
   <section id="welcome-to-sphot-s-documentation">
 <h1>Welcome to Sphot's documentation!<a class="headerlink" href="#welcome-to-sphot-s-documentation" title="Link to this heading"></a></h1>
-<a class="reference internal image-reference" href="_images/sample.jpg"><img alt="Example image" class="align-center" src="_images/sample.jpg" style="width: 100%;" /></a>
-<p>This documentation is under development. Stay tuned!</p>
+<a class="reference internal image-reference" href="_images/concept.jpg"><img alt="Example image" class="align-center" src="_images/concept.jpg" style="width: 100%;" /></a>
+<section id="what-is-sphot">
+<h2>What is Sphot?<a class="headerlink" href="#what-is-sphot" title="Link to this heading"></a></h2>
+<p>Sphot (&quot;es&quot;-phot, S-PHOT) is a Python package for astronomical image analysis. It is designed to provide a simple and efficient way to perform photometry on galaxy images with overlapping foreground stars.
+Sphot provides a set of tools to perform &quot;foreground cleaning&quot; on images, i.e., to remove the light from the stars in the image before performing photometry on the galaxies.
+Some of the major functionalities of Sphot include:</p>
+<ul class="simple">
+<li><p><strong>Fit PSF models</strong> to stars near/on top of a background galaxy</p></li>
+<li><p><strong>Fit a Sersic profile</strong> to a galaxy in a crowded stellar field</p></li>
+<li><p>Separate foreground stars and background galaxies</p></li>
+<li><p>Estimate the background/foreground/sky model in a crowded field</p></li>
+<li><p>Perform aperture photometry on galaxies</p></li>
+<li><p>and many more...</p></li>
+</ul>
+<p>Users can choose from a range of interfaces to perform these tasks:</p>
+<ul class="simple">
+<li><p>A simple, fully-automated commandline script <code class="docutils literal notranslate"><span class="pre">run_sphot</span></code></p></li>
+<li><p>The top-level functions <code class="docutils literal notranslate"><span class="pre">sphot.core.run_basefit()</span></code> and <code class="docutils literal notranslate"><span class="pre">sphot.core.run_scalefit</span></code></p></li>
+<li><p>The individual functions in the <code class="docutils literal notranslate"><span class="pre">sphot</span></code> package to make your own recipe</p></li>
+</ul>
+<p>Each use case is documented in the <a class="reference internal" href="rst/tutorials.html"><span class="doc">tutorials</span></a> section.</p>
+</section>
+<section id="when-to-use-sphot">
+<h2>When to use Sphot?<a class="headerlink" href="#when-to-use-sphot" title="Link to this heading"></a></h2>
+<p>Sphot has a simple objectuve: to enable precise and accurate photometry of galaxies seen through crowded, foreground stellar fields. Try Sphot if you are looking to:</p>
+<ul class="simple">
+<li><p>measure the SED of a background galaxy (z&gt;0.1) seen through a nearby galaxy (z&lt;&lt;0.01)</p></li>
+<li><p>remove a foreground MW star from an image of deep field galaxies</p></li>
+<li><p>fit a Sersic profile to a noisy galaxy image with a bright star in the field</p></li>
+</ul>
+</section>
+<section id="what-is-required-to-use-sphot">
+<h2>What is required to use Sphot?<a class="headerlink" href="#what-is-required-to-use-sphot" title="Link to this heading"></a></h2>
+<p>Sphot is a python package that depends on major astronomy packages, including Astropy and Photutils. You need at least the following:</p>
+<ul class="simple">
+<li><p>Python 3.11 or later (due to Astropy compatibility)</p></li>
+<li><p>A cutout image of the target galaxy. If you wish to use multi-band images, each image needs to be pixel-aligned and reprojected onto the same scale.</p></li>
+<li><p>A PSF image for the stars to be removed. The pixel scale of the PSF image should be an integer multiple of the pixel scale of the galaxy image.</p></li>
+<li></li>
+</ul>
 <div class="toctree-wrapper compound">
-<p class="caption" role="heading"><span class="caption-text">Contents</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="notebooks.html">Tutorials</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="notebooks/tutorial.html">Sphot tutorial</a></li>
-</ul>
-</li>
-</ul>
 </div>
 <div class="toctree-wrapper compound">
-<p class="caption" role="heading"><span class="caption-text">API documentation</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="api/core.html">Core</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="api/core.html#sphot.core.ignorewarnings"><code class="docutils literal notranslate"><span class="pre">ignorewarnings()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/core.html#sphot.core.run_basefit"><code class="docutils literal notranslate"><span class="pre">run_basefit()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/core.html#sphot.core.run_scalefit"><code class="docutils literal notranslate"><span class="pre">run_scalefit()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/core.html#sphot.core.showprogress"><code class="docutils literal notranslate"><span class="pre">showprogress()</span></code></a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="api/data.html">Data objects</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="api/data.html#sphot.data.CutoutData"><code class="docutils literal notranslate"><span class="pre">CutoutData</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/data.html#sphot.data.DebugException"><code class="docutils literal notranslate"><span class="pre">DebugException</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/data.html#sphot.data.MultiBandCutout"><code class="docutils literal notranslate"><span class="pre">MultiBandCutout</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/data.html#sphot.data.calc_mag"><code class="docutils literal notranslate"><span class="pre">calc_mag()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/data.html#sphot.data.decode_if_bytestring"><code class="docutils literal notranslate"><span class="pre">decode_if_bytestring()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/data.html#sphot.data.get_data_annulus"><code class="docutils literal notranslate"><span class="pre">get_data_annulus()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/data.html#sphot.data.load_h5data"><code class="docutils literal notranslate"><span class="pre">load_h5data()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/data.html#sphot.data.read_sphot_h5"><code class="docutils literal notranslate"><span class="pre">read_sphot_h5()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/data.html#sphot.data.str_to_json"><code class="docutils literal notranslate"><span class="pre">str_to_json()</span></code></a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="api/plotting.html">Plotting</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="api/plotting.html#sphot.plotting.astroplot"><code class="docutils literal notranslate"><span class="pre">astroplot()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/plotting.html#sphot.plotting.plot_profile2d"><code class="docutils literal notranslate"><span class="pre">plot_profile2d()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/plotting.html#sphot.plotting.plot_sersicfit_result"><code class="docutils literal notranslate"><span class="pre">plot_sersicfit_result()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/plotting.html#sphot.plotting.plot_sphot_results"><code class="docutils literal notranslate"><span class="pre">plot_sphot_results()</span></code></a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="api/fitting.html">Sersic model fitting</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="api/fitting.html#sphot.fitting.ModelFitter"><code class="docutils literal notranslate"><span class="pre">ModelFitter</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/fitting.html#sphot.fitting.ModelScaleFitter"><code class="docutils literal notranslate"><span class="pre">ModelScaleFitter</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/fitting.html#sphot.fitting.ProfileStats"><code class="docutils literal notranslate"><span class="pre">ProfileStats</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/fitting.html#sphot.fitting.do_aperture_photometry"><code class="docutils literal notranslate"><span class="pre">do_aperture_photometry()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/fitting.html#sphot.fitting.iterative_NM"><code class="docutils literal notranslate"><span class="pre">iterative_NM()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/fitting.html#sphot.fitting.make_annulus"><code class="docutils literal notranslate"><span class="pre">make_annulus()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/fitting.html#sphot.fitting.make_aperture"><code class="docutils literal notranslate"><span class="pre">make_aperture()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/fitting.html#sphot.fitting.profile_stats"><code class="docutils literal notranslate"><span class="pre">profile_stats()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/fitting.html#sphot.fitting.save_bestfit_params"><code class="docutils literal notranslate"><span class="pre">save_bestfit_params()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/fitting.html#sphot.fitting.triple_annealing"><code class="docutils literal notranslate"><span class="pre">triple_annealing()</span></code></a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="api/psf.html">PSF photometry</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="api/psf.html#sphot.psf.PSFFitter"><code class="docutils literal notranslate"><span class="pre">PSFFitter</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/psf.html#sphot.psf.do_psf_photometry"><code class="docutils literal notranslate"><span class="pre">do_psf_photometry()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/psf.html#sphot.psf.filter_psfphot_results"><code class="docutils literal notranslate"><span class="pre">filter_psfphot_results()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/psf.html#sphot.psf.iterative_psf_fitting"><code class="docutils literal notranslate"><span class="pre">iterative_psf_fitting()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/psf.html#sphot.psf.make_modelimg"><code class="docutils literal notranslate"><span class="pre">make_modelimg()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/psf.html#sphot.psf.sigma_clip_outside_aperture"><code class="docutils literal notranslate"><span class="pre">sigma_clip_outside_aperture()</span></code></a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="api/aperture.html">Aperture photometry</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="api/aperture.html#sphot.aperture.CutoutDataPhotometry"><code class="docutils literal notranslate"><span class="pre">CutoutDataPhotometry</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/aperture.html#sphot.aperture.IsoPhotApertures"><code class="docutils literal notranslate"><span class="pre">IsoPhotApertures</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/aperture.html#sphot.aperture.prepare_blurring_kernel"><code class="docutils literal notranslate"><span class="pre">prepare_blurring_kernel()</span></code></a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="api/utils.html">Utilities</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="api/utils.html#sphot.utils.load_and_crop"><code class="docutils literal notranslate"><span class="pre">load_and_crop()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/utils.html#sphot.utils.prep_model"><code class="docutils literal notranslate"><span class="pre">prep_model()</span></code></a></li>
-</ul>
-</li>
-</ul>
+</div>
+<div class="toctree-wrapper compound">
 </div>
 </section>
-<section id="indices-and-tables">
-<h1>Indices and tables<a class="headerlink" href="#indices-and-tables" title="Link to this heading"></a></h1>
-<ul class="simple">
-<li><p><a class="reference internal" href="genindex.html"><span class="std std-ref">Index</span></a></p></li>
-<li><p><a class="reference internal" href="py-modindex.html"><span class="std std-ref">Module Index</span></a></p></li>
-<li><p><a class="reference internal" href="search.html"><span class="std std-ref">Search Page</span></a></p></li>
-</ul>
 </section>
 
 
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="notebooks.html" class="btn btn-neutral float-right" title="Tutorials" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="notebooks/quick_look.html" class="btn btn-neutral float-right" title="Before you start - a quick look at Sphot" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>
