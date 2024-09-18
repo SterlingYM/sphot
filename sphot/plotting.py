@@ -38,7 +38,6 @@ def astroplot(data,percentiles=[1,99.9],cmap='viridis',
     else:
         assert offset is not None, 'offset has to be provided if norm is provided'
 
-    # plot
     clipped_data = data.copy() + offset
     clipped_data[clipped_data<=norm.vmin] = norm.vmin
     clipped_data[clipped_data>=norm.vmax] = norm.vmax
@@ -50,7 +49,16 @@ def astroplot(data,percentiles=[1,99.9],cmap='viridis',
     ax.set_xticks([])
     if title is not None:
         ax.set_title(title,fontsize=13)
-    return norm,offset
+        
+    # plot
+    def _norm(data):
+        arr = norm(data)
+        arr[arr>1] = 1
+        arr[arr<0] = 0
+        return arr
+    norm_func = norm
+    norm_func.__call__ = _norm
+    return norm_func,offset
 
 def plot_sersicfit_result(data,data_annulus,_img):
     ''' 

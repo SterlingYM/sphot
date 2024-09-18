@@ -303,16 +303,18 @@ class MultiBandCutout():
     def image_list(self):
         return [getattr(self,filtername) for filtername in self.filters]  
     
-    def plot(self,attr='data',title=''):
+    def plot(self,attr='data',title='',show=True,**kwargs):
         fig,axes = plt.subplots(1,len(self.filters),
                                 figsize=(4*len(self.filters),4))
         for filt, ax in zip(self.filters,axes):
             _data = getattr(self.images[filt],attr,None)
             if _data is None:
                 continue
-            astroplot(_data,ax=ax)
+            astroplot(_data,ax=ax,**kwargs)
             ax.set_title(filt)
         fig.suptitle(f'{title} {self.name} {attr}',fontsize=15)    
+        if show:
+            plt.show()
         
     def crop_in(self,x0,y0,size):
         ''' crop-in and re-generate the MultiBandCutout object.
@@ -429,6 +431,10 @@ def decode_if_bytestring(val):
     else:
         return val
 
+def load_sphotfile(filepath):
+    ''' alias to read_sphot_h5'''
+    return read_sphot_h5(filepath)
+    
 def read_sphot_h5(filepath):
     ''' load h5 file to sphot objects '''
     galaxy_loaded = MultiBandCutout()

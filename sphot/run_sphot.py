@@ -6,12 +6,16 @@ Run the basic sphot pipeline on a single galaxy.
 This script automatically detects the running environment (e.g., Slurm array job or local machine) and switches the logging output accordingly.
 
 Usage:
-    run_sphot data_file.h5  [--out_folder=foldername] # run sphot on a new data file
-    run_sphot sphot_file.h5 --rerun_all      # rerun both basefit and scalefit 
-    run_sphot sphot_file.h5 --continue       # continue scalefit on existing sphot file if necessary 
-    run_sphot sphot_file.h5 --rerun_basefit  # rerun basefit on existing sphot file 
-    run_sphot sphot_file.h5 --rerun_scalefit # rerun all scalefit on existing sphot file
+    run_sphot data_file.h5  [--out_folder=foldername] # run sphot on a new data file (option 1)
+    run_sphot sphot_file.h5 --rerun_all      # rerun both basefit and scalefit (option 2)
+    run_sphot sphot_file.h5 --continue       # continue scalefit on existing sphot file if necessary (option 3)
+    run_sphot sphot_file.h5 --rerun_basefit  # rerun basefit on existing sphot file (option 4)
+    run_sphot sphot_file.h5 --rerun_scalefit # rerun all scalefit on existing sphot file (option 5)
 
+Requirements:
+    - for running the initial fit, a file PSFdata.h5 is required in the working directory. See documentation for the format.
+    - fit parameters can be changed by placing sphot_conf.py in the working directory. If the file is not found, the default settings are used.
+    
 '''
 
 import sys
@@ -20,19 +24,33 @@ import numpy as np
 from sphot.utils import load_and_crop
 from sphot.core import run_basefit, run_scalefit, logger
 from sphot.data import read_sphot_h5
+import importlib
 
-filters =  ['F555W','F814W','F090W','F150W','F160W','F277W']
-folder_PSF = 'PSF/'   # a folder that contains filtername.npy (which stores PSF 2D array)
-base_filter = 'F150W' # the name of filter to which the Sersic model is fitted
-blur_psf = dict(zip(filters,[4,5,3.8,3.8,9,9])) # the sigma of PSF blurring in pixels
-iter_basefit = 10  # Number of iterative Sersic-PSF fitting for the base_filter fit
-iter_scalefit = 5 # Number of iterative Sersic-PSF fitting for scale-fit
-fit_complex_model = False # two-Sersic if True, single-Sersic if False
-allow_refit = False # Sersic profile is re-fitted for each filter if True
-custom_initial_crop = 1 # a float between 0 and 1: make this number smaller to manually crop data before analysis
-sigma_guess = 10 # initial guess of galaxy size in pixels (~HWHM of the galaxy profile)
-
-
+config_file = 'sphot_conf.py'
+# Check if the config file exists in the working directory
+if os.path.isfile(config_file):
+    try:
+        spec = importlib.util.spec_from_file_location("sphot_conf", config_file)
+        conf_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(conf_module)
+        logger.info('successfully loaded sphot_conf.py from the working directory')
+        
+        # Access variables from the loaded module
+        filters = getattr(conf_module, 'filters', ['F555W', 'F814W', 'F090W', 'F150W', 'F160W', 'F277W'])
+        PSF_file = getattr(conf_module, 'PSF_file', 'PSFdata.h5')
+        base_filter = getattr(conf_module, 'base_filter', 'F150W')
+        blur_psf = getattr(conf_module, 'blur_psf', dict(zip(filters, [4, 5, 3.8, 3.8, 9, 9])))
+        iter_basefit = getattr(conf_module, 'iter_basefit', 10)
+        iter_scalefit = getattr(conf_module, 'iter_scalefit', 5)
+        fit_complex_model = getattr(conf_module, 'fit_complex_model', False)
+        allow_refit = getattr(conf_module, 'allow_refit', False)
+        custom_initial_crop = getattr(conf_module, 'custom_initial_crop', 1)
+        sigma_guess = getattr(conf_module, 'sigma_guess', 10)
+    except Exception as e:
+        logger.error(f"Error loading sphot_conf.py: {e}")
+else:
+    logger.info('sphot_conf.py not found in the working directory. Using the default settings.')
+    
 def argv_to_kwargs(args):
     # default options
     initial_run = True
@@ -65,9 +83,9 @@ def argv_to_kwargs(args):
                 initial_run = False
             elif arg.startswith('--out_folder'):
                 out_folder = arg.split('=')[1]
-                logger.info('output folder specified:',out_folder)
+                logger.info(f'output folder specified: {out_folder}')
             else:
-                logger.info('unknown options:',arg)   
+                logger.info(f'unknown options: {arg}')   
                 
     kwargs = dict(datafile=datafile,
                   initial_run = initial_run,
@@ -75,7 +93,6 @@ def argv_to_kwargs(args):
                   rerun_basefit=rerun_basefit,
                   rerun_scalefit=rerun_scalefit,
                   out_folder=out_folder)
-     
     return kwargs
 
 def run_sphot(datafile,
@@ -86,13 +103,15 @@ def run_sphot(datafile,
 
     # 1. load data
     if initial_run:
-        galaxy = load_and_crop(datafile,filters,folder_PSF,
+        galaxy = load_and_crop(datafile,filters,PSF_file,
                             base_filter = base_filter,
                             plot = False,
                             custom_initial_crop = custom_initial_crop,
                             sigma_guess = sigma_guess)
         out_path = os.path.join(out_folder,f'{galaxy.name}_sphot.h5')
         logger.info(f'Galaxy data loaded: sphot file will be saved as {out_path}')
+        rerun_basefit = True
+        rerun_scalefit = True
     else:
         logger.info(f'Loading an existing sphot filt: {datafile}')
         galaxy = read_sphot_h5(datafile)

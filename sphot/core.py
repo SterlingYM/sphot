@@ -51,8 +51,8 @@ def showprogress(func):
 @ignorewarnings
 @showprogress
 def run_basefit(galaxy,base_filter,
-               fit_complex_model,blur_psf,
-               N_mainloop_iter,
+               fit_complex_model=False,blur_psf=None,
+               N_mainloop_iter=5,
                progress=None,
                verbose=False,plot=False,**kwargs):
     kwargs['verbose'] = verbose
@@ -71,7 +71,8 @@ def run_basefit(galaxy,base_filter,
     for attrname in ['sersic_modelimg','psf_modelimg']:
         setattr(cutoutdata,attrname,0) # remove previous results
     cutoutdata.perform_bkg_stats()
-    cutoutdata.blur_psf(blur_psf)
+    if blur_psf is not None:
+        cutoutdata.blur_psf(blur_psf)
 
     # 2. make models & prepare fitters
     model_1 = prep_model(cutoutdata,simple=True)

@@ -394,6 +394,8 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
     try:
         phot_result = psf_iter(data_bksub, error=error)
     except Exception as e:
+        ## TMP
+        raise e
         logger.info(f'IterativePSFPhotometry failed due to: {str(e)}')
         phot_result = None
     if phot_result is None:
@@ -407,9 +409,9 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
         kwargs = _update_filter_criteria(phot_result,**kwargs)
         s,msg = filter_psfphot_results(phot_result,**kwargs)
         if (s is None) or (s.sum() == 0):
-            logger.info(f'No source passed the cut ({len(phot_result)} detection).')
+            logger.debug(f'No source passed the cut ({len(phot_result)} detection).')
             if verbose:
-                logger.info(msg)
+                logger.debug(msg)
             return None,None,None,None
         init_params = QTable()
         init_params['x'] = phot_result['x_fit'].value[s]
