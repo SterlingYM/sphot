@@ -1,6 +1,6 @@
-# sphot
+# SPHOT
 
-Sphot ("es-phot") is a package designed for performing an accurate color measurement of galaxies in a crowded field.
+S-phot ("es-phot") is a package designed for performing an accurate color measurement of galaxies in a crowded field.
 This package is under development.
 
 ![](docs/images/concept.jpg)
