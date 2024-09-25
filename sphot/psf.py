@@ -19,6 +19,7 @@ from photutils.datasets.images import make_model_image as _make_model_image
 
 from .data import get_data_annulus
 from .logging import logger
+from .config import config
 
 class PSFFitter():
     ''' A class to perform PSF fitting. '''
@@ -68,7 +69,7 @@ class PSFFitter():
         # generate PSF-subtracted data
         mask = sigma_clip_outside_aperture(resid,
                                            self.cutoutdata.sersic_params_physical,clip_sigma=4,
-                                           aper_size_in_r_eff=1.5,
+                                           aper_size_in_r_eff=config['psf']['mask_aper_size_in_r_eff'],
                                            plot=True)
         psf_subtracted_data = self.cutoutdata._rawdata - psf_model_total
         psf_subtracted_data[mask] = np.nan
@@ -378,7 +379,7 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
         localbkg_bounds[0]*psf_sigma, 
         localbkg_bounds[1]*psf_sigma, 
         mmm_bkg)
-    grouper = SourceGrouper(min_separation=3.0 * psf_sigma) 
+    grouper = SourceGrouper(min_separation=config['psf']['grouper_separation_in_psfsigma'] * psf_sigma) 
 
     #### run phootmetry
     psf_iter = IterativePSFPhotometry(
@@ -387,9 +388,9 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
         mode='new',
         grouper=grouper,
         localbkg_estimator=localbkg_estimator,
-        aperture_radius=3,
-        maxiters=5,
-        fitter_maxiters=300
+        aperture_radius=config['psf']['aperture_radius'],
+        maxiters=config['psf']['IterativePSFPhotometry_maxiters'],
+        fitter_maxiters=config['psf']['fitter_maxiters']
         )
     try:
         phot_result = psf_iter(data_bksub, error=error)
@@ -442,8 +443,8 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
         finder=daofinder, 
         localbkg_estimator=localbkg_estimator,
         grouper=grouper,
-        aperture_radius=3,
-        fitter_maxiters=300
+        aperture_radius=config['psf']['aperture_radius'],
+        fitter_maxiters=config['psf']['fitter_maxiters'],
         )
     phot_result = psfphot(data_bksub, 
                           error=error, 

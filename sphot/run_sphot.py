@@ -11,6 +11,7 @@ Usage:
     run_sphot sphot_file.h5 --continue       # continue scalefit on existing sphot file if necessary (option 3)
     run_sphot sphot_file.h5 --rerun_basefit  # rerun basefit on existing sphot file (option 4)
     run_sphot sphot_file.h5 --rerun_scalefit # rerun all scalefit on existing sphot file (option 5)
+    run_sphot sphot_file.h5 --rerun_scalefit --filter=F555W # rerun specific filter 
 
 Requirements:
     - for running the initial fit, a file PSFdata.h5 is required in the working directory. See documentation for the format.
@@ -24,32 +25,19 @@ import numpy as np
 from sphot.utils import load_and_crop
 from sphot.core import run_basefit, run_scalefit, logger
 from sphot.data import read_sphot_h5
-import importlib
+from .config import config
 
-config_file = 'sphot_conf.py'
-# Check if the config file exists in the working directory
-if os.path.isfile(config_file):
-    try:
-        spec = importlib.util.spec_from_file_location("sphot_conf", config_file)
-        conf_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(conf_module)
-        logger.info('successfully loaded sphot_conf.py from the working directory')
-        
-        # Access variables from the loaded module
-        filters = getattr(conf_module, 'filters', ['F555W', 'F814W', 'F090W', 'F150W', 'F160W', 'F277W'])
-        PSF_file = getattr(conf_module, 'PSF_file', 'PSFdata.h5')
-        base_filter = getattr(conf_module, 'base_filter', 'F150W')
-        blur_psf = getattr(conf_module, 'blur_psf', dict(zip(filters, [4, 5, 3.8, 3.8, 9, 9])))
-        iter_basefit = getattr(conf_module, 'iter_basefit', 10)
-        iter_scalefit = getattr(conf_module, 'iter_scalefit', 5)
-        fit_complex_model = getattr(conf_module, 'fit_complex_model', False)
-        allow_refit = getattr(conf_module, 'allow_refit', False)
-        custom_initial_crop = getattr(conf_module, 'custom_initial_crop', 1)
-        sigma_guess = getattr(conf_module, 'sigma_guess', 10)
-    except Exception as e:
-        logger.error(f"Error loading sphot_conf.py: {e}")
-else:
-    logger.info('sphot_conf.py not found in the working directory. Using the default settings.')
+filters = config['core']['filters']
+PSF_file = config['core']['PSF_file']
+base_filter = config['core']['base_filter']
+blur_psf = config['core']['blur_psf']
+iter_basefit = config['core']['iter_basefit']
+iter_scalefit = config['core']['iter_scalefit']
+fit_complex_model = config['core']['fit_complex_model']
+allow_refit = config['core']['allow_refit']
+custom_initial_crop = config['core']['custom_initial_crop']
+sigma_guess = config['core']['sigma_guess']
+filters_to_fit = filters.copy()
     
 def argv_to_kwargs(args):
     # default options
@@ -84,6 +72,9 @@ def argv_to_kwargs(args):
             elif arg.startswith('--out_folder'):
                 out_folder = arg.split('=')[1]
                 logger.info(f'output folder specified: {out_folder}')
+            elif arg.startswith('--filter'):
+                filters_to_fit = np.atleast_1d(arg.split('=')[1].split(','))
+                logger.info(f'filters to fit: {filters_to_fit}')
             else:
                 logger.info(f'unknown options: {arg}')   
                 
@@ -92,13 +83,14 @@ def argv_to_kwargs(args):
                   continue_scalefit = continue_scalefit,
                   rerun_basefit=rerun_basefit,
                   rerun_scalefit=rerun_scalefit,
-                  out_folder=out_folder)
+                  out_folder=out_folder,
+                  filters_to_fit=filters_to_fit)
     return kwargs
 
 def run_sphot(datafile,
               initial_run=True,continue_scalefit=False,
               rerun_basefit=False,rerun_scalefit=False,
-              out_folder='.',**kwargs):
+              out_folder='.',filters_to_fit=[],**kwargs):
     ''' main commands are put in this dummy function so that the rich output can be forwarded to a log file when running in slurm'''
 
     # 1. load data
@@ -131,8 +123,9 @@ def run_sphot(datafile,
     # 3. Scale Sersic model (if necessary)
     if rerun_scalefit or continue_scalefit:
         logger.info('----- Starting Scale fit -----')
+        logger.info(f'Filters to fit: {filters_to_fit}')
         base_params = galaxy.images[base_filter].sersic_params
-        for filt in filters:
+        for filt in filters_to_fit:
             # check if we should skip scalefit
             if hasattr(galaxy.images[filt],'psf_sub_data') and not rerun_scalefit:
                 # skip scalefit if data exists and not rerun_scalefit==True
@@ -144,17 +137,17 @@ def run_sphot(datafile,
                     continue
                 
             # run scalefit
-            # try:
-            run_scalefit(galaxy,filt,base_params,
-                        allow_refit=allow_refit,
-                        fit_complex_model=fit_complex_model,
-                        N_mainloop_iter=7,
-                        blur_psf=blur_psf[filt],
-                        **kwargs)
-            galaxy.save(out_path)
-            # except Exception as e:
-            #     logger.info(f'Filter {filt} failed: {str(e)}')
-            #     continue
+            try:
+                run_scalefit(galaxy,filt,base_params,
+                            allow_refit=allow_refit,
+                            fit_complex_model=fit_complex_model,
+                            N_mainloop_iter=7,
+                            blur_psf=blur_psf[filt],
+                            **kwargs)
+                galaxy.save(out_path)
+            except Exception as e:
+                logger.info(f'Filter {filt} failed: {str(e)}')
+                continue
             
     logger.info('Completed Sphot')
 
