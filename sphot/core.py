@@ -2,6 +2,7 @@ from .utils import load_and_crop, prep_model
 from .psf import PSFFitter
 from .fitting import ModelFitter, ModelScaleFitter
 from .plotting import plot_sphot_results
+from .aperture import aperture_routine
 
 import glob
 import sys
@@ -177,3 +178,11 @@ def run_scalefit(galaxy,filtername,base_params,allow_refit,
         
     # final sky subtraction
     logger.info(f'*** {filtername} done ***')
+
+
+@ignorewarnings
+@showprogress
+def run_aperphot(**kwargs):
+    returns = aperture_routine(**kwargs)
+    logger.info('*** Aperture photometry completed ***')
+    return returns

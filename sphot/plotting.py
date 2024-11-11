@@ -34,13 +34,13 @@ def astroplot(data,percentiles=[1,99.9],cmap='viridis',
             offset = 0
         vmin += offset 
         vmax += offset
-        norm = LogNorm(vmin=vmin,vmax=vmax)
+        norm = LogNorm(vmin=vmin,vmax=vmax,clip=True)
     else:
         assert offset is not None, 'offset has to be provided if norm is provided'
 
     clipped_data = data.copy() + offset
-    clipped_data[clipped_data<=norm.vmin] = norm.vmin
-    clipped_data[clipped_data>=norm.vmax] = norm.vmax
+    # clipped_data[clipped_data<=norm.vmin] = norm.vmin
+    # clipped_data[clipped_data>=norm.vmax] = norm.vmax
     if isinstance(cmap, str):
         cmap = plt.get_cmap(cmap)
         cmap.set_bad(set_bad)
@@ -51,14 +51,15 @@ def astroplot(data,percentiles=[1,99.9],cmap='viridis',
         ax.set_title(title,fontsize=13)
         
     # plot
-    def _norm(data):
-        arr = norm(data)
-        arr[arr>1] = 1
-        arr[arr<0] = 0
-        return arr
-    norm_func = norm
-    norm_func.__call__ = _norm
-    return norm_func,offset
+    # class ClipNorm(data):
+    #     arr = norm(data)
+    #     arr[arr>1] = 1
+    #     arr[arr<0] = 0
+    #     setattr(arr,'vmin',norm.vmin)
+    #     return arr
+    # norm_func = norm
+    # norm_func.__call__ = _norm
+    return norm,offset
 
 def plot_sersicfit_result(data,data_annulus,_img):
     ''' 

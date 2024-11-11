@@ -224,7 +224,7 @@ class CutoutData():
             s = np.array(sigmas) < np.array(self.data.shape)/1.5
             size_guess = np.array(sigmas)[s][0]
         else:
-            size_guess = np.mean(sigmas)
+            size_guess = np.max(sigmas)
         self.x0_guess = centers[1]
         self.y0_guess = centers[0]
         self.size_guess = size_guess
@@ -358,6 +358,7 @@ class MultiBandCutout():
                 else:
                     f.create_dataset(g_key,data=str_to_json(g_val))
         logger.info(f'Saved to {filepath}')
+        
 
 def load_h5data(filepath,name='',filters=[],PSFs_dict=None,
                 psf_oversample=4):

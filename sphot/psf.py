@@ -493,24 +493,28 @@ def iterative_psf_fitting(data,psfimg,psf_sigma,psf_oversample,
         progress_psf = progress.add_task(progress_text, 
                                         total=len(threshold_list))
     for th in threshold_list:
-        psf_results = do_psf_photometry(resid, psfimg,
-                                        psf_sigma= psf_sigma,
-                                        psf_oversample=psf_oversample,
-                                        th=th,**kwargs)
-        if progress is not None:
-            progress.update(progress_psf, advance=1, refresh=True)
-        if psf_results[0] is None:
-            continue
-        else:
-            _phot_result, _, _, _resid = psf_results
-            if np.all(~np.isfinite(_resid)):
+        try:
+            psf_results = do_psf_photometry(resid, psfimg,
+                                            psf_sigma= psf_sigma,
+                                            psf_oversample=psf_oversample,
+                                            th=th,**kwargs)
+            if progress is not None:
+                progress.update(progress_psf, advance=1, refresh=True)
+            if psf_results[0] is None:
                 continue
-            # append the results
-            resid = _resid
-            if phot_result is None:
-                phot_result = _phot_result
             else:
-                phot_result = vstack([phot_result, _phot_result])
+                _phot_result, _, _, _resid = psf_results
+                if np.all(~np.isfinite(_resid)):
+                    continue
+                # append the results
+                resid = _resid
+                if phot_result is None:
+                    phot_result = _phot_result
+                else:
+                    phot_result = vstack([phot_result, _phot_result])
+        except Exception as e:
+            logger.error(f'Skipping PSF fitting with th={th:.2f}. {str(e)}')
+            continue
     if progress is not None:
         progress.remove_task(progress_psf)
     return phot_result, resid

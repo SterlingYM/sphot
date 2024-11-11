@@ -9,11 +9,131 @@ from astropy import units as u
 from photutils.psf import TopHatWindow, create_matching_kernel
 from photutils.aperture import EllipticalAperture, aperture_photometry
 
+from copy import deepcopy
 from csaps import csaps
 from skimage import measure
 import cv2
 from .plotting import astroplot
+from .logging import logger
 
+def aperture_routine(galaxy,petro=0.5,center_mask=3.5,plot=True,
+                     isophot_base_filter = None,
+                     isophot_frac_min = 0.05,
+                     isophot_frac_max = 0.95,
+                     fit_isophot_to='sersic_modelimg',
+                     measure_on = 'psf_sub_data',
+                     error_on = 'psf_sub_data_error',
+                     measure_sky_on='residual_masked',
+                     fill_max_nan_frac=0.7,
+                     fill_replace_with='sersic_modelimg',
+                     correct_PSF = True,
+                     PSF_corr_base_filter='F090W',
+                     custom_aperture=None,
+                     **kwargs):
+    ''' Run aperture photometry. 
+    '''
+    logger.info(f'*** running aperture photometry ***')
+    logger.info(f'- Petrosian index: {petro}')
+    logger.info(f'- Using data: {measure_on}')
+    logger.info(f'- Using error: {error_on}')
+    logger.info(f'- Using sky: {measure_sky_on}')
+    # 1. fill NaNs using isophot
+    if isophot_base_filter is not None:
+        logger.info('Filling NaNs using isophot...')
+        iso_apers = IsoPhotApertures(galaxy.images[isophot_base_filter])
+        iso_apers.create_apertures(fit_to=fit_isophot_to,
+                                frac_enc=np.linspace(isophot_frac_min,isophot_frac_max,100))
+        fill_nans(galaxy,
+                iso_apers.apertures,
+                apply_to=[measure_on,error_on,measure_sky_on],
+                max_nan_frac=fill_max_nan_frac,
+                replace_with=fill_replace_with)
+    else:
+        logger.info('Skipping NaN filling using isophot...')
+        for filt in galaxy.filters:
+            cutoutdata = galaxy.images[filt]
+            setattr(cutoutdata,measure_on+'_filled',getattr(cutoutdata,measure_on,None))
+            setattr(cutoutdata,error_on+'_filled',getattr(cutoutdata,error_on,None))
+            setattr(cutoutdata,measure_sky_on+'_filled',getattr(cutoutdata,measure_sky_on,None))
+
+    # 2. define aperture
+    if custom_aperture is None:
+        logger.info('Calculating aperture for photometry...')
+        iso_apers.measure_flux(measure_on= measure_on + '_filled')
+        iso_apers.calc_petrosian_indices(bin_size=2)
+        aper_sci = iso_apers.get_aper_at(petro=petro)
+        if plot:
+            iso_apers.plot()
+    else:
+        logger.info('Using custom aperture...')
+        aper_sci = custom_aperture
+    
+    # 3. run aperture photometry
+    logger.info('Running aperture photometry...')
+    for filt in galaxy.filters:
+        cutoutdata = galaxy.images[filt]
+        aperphot = CutoutDataPhotometry(cutoutdata,aper_sci)
+        aperphot.measure_flux(measure_on= measure_on + '_filled',
+                                error_on= error_on + '_filled')
+        aperphot.measure_sky(measure_on = measure_sky_on + '_filled',
+                            center_mask = center_mask,
+                            mode='grid')
+        aperphot.calc_mag()
+        if plot:
+            aperphot.plot()
+        cutoutdata.aper_petro = petro
+        cutoutdata.mag_raw = aperphot.magAB
+        cutoutdata.mag_raw_err = aperphot.magAB_err
+    if not correct_PSF:
+        return aper_sci
+    
+    # 4. PSF correction
+    logger.info('Running PSF correction...')
+    data_to_blur = [measure_on+'_filled',
+                    error_on+'_filled',
+                    measure_sky_on+'_filled']
+
+    for filt in galaxy.filters:
+        # convolve
+        blurring_kernel,_,_ = prepare_blurring_kernel(
+            galaxy,
+            PSF_corr_base_filter,
+            filt)
+        cutoutdata = galaxy.images[filt]
+        _cutoutdata = deepcopy(galaxy.images[PSF_corr_base_filter])
+        for attr in data_to_blur:
+            data_convolved = convolve(
+                getattr(_cutoutdata,attr),
+                blurring_kernel,
+                preserve_nan=False if 'residual' in attr else True)
+            if '_error_filled' in attr:
+                new_attr = attr.replace('_error_filled','_filled_blurred_error')
+            elif '_error' in attr:
+                new_attr = attr.replace('_error','_blurred_error')
+            else:
+                new_attr = attr+'_blurred'
+            setattr(_cutoutdata,new_attr,data_convolved)
+            
+        # run photometry and measure the difference
+        aperphot = CutoutDataPhotometry(_cutoutdata,aper_sci)
+        aperphot.measure_flux(measure_on=measure_on+'_filled_blurred',
+                              error_on=error_on.replace('_error','_filled_blurred_error'))
+        aperphot.measure_sky(measure_on=measure_sky_on+'_filled_blurred',
+                            center_mask = center_mask,
+                            mode='grid')
+        aperphot.calc_mag()
+        if plot:
+            aperphot.plot()
+        cutoutdata.dmag_PSFcorr = aperphot.magAB - _cutoutdata.mag_raw
+        cutoutdata.dmag_PSFcorr_err = _cutoutdata.mag_raw_err
+    
+    for filt in galaxy.filters:
+        cutoutdata = galaxy.images[filt]
+        cutoutdata.dmag_PSFcorr -= galaxy.images[PSF_corr_base_filter].dmag_PSFcorr
+        cutoutdata.mag_corr = cutoutdata.mag_raw - cutoutdata.dmag_PSFcorr
+        cutoutdata.mag_corr_err = np.sqrt(cutoutdata.mag_raw_err**2 + cutoutdata.dmag_PSFcorr_err**2)
+        
+    return aper_sci
 
 def prepare_blurring_kernel(galaxy,filt,blur_to,
                             window=TopHatWindow(0.35)):
@@ -73,24 +193,43 @@ def fill_nans(galaxy,apertures,
                     aper = apertures[i]
                     mask = aper.to_mask(method='center').to_image(data.shape).astype(bool)
                     s = ~np.isfinite(data) & mask
+                    if s.sum() == 0:
+                        continue
+                    # elif s.sum() <= max_nan_frac * mask.sum():
                     data_filled[s] = getattr(cutoutdata,replace_with)[s].copy()
-                    raise_replace_warning = True
-                aper_outer = apertures[i]
-                aper_inner = apertures[i-1]
-                mask_outer = aper_outer.to_mask(method='center').to_image(data.shape).astype(bool)
-                mask_inner = aper_inner.to_mask(method='center').to_image(data.shape).astype(bool)
-                mask_img = mask_outer & (~mask_inner)
-                median_val = np.nanmedian(data[mask_img])
-                s = mask_img & (~np.isfinite(data))
-                if s.sum() <= max_nan_frac * mask_img.sum():
-                    data_filled[s] = median_val
-                else:
-                    data_filled[s] = getattr(cutoutdata,replace_with)[s].copy()
-                    raise_replace_warning = True
+                    logger.warning('NaN pixels exists near the center. Replacing with the reference image')
+                    # else:
+                        # logger.error('NaN pixels near the center...')
+                else:                    
+                    aper_outer = apertures[i]
+                    aper_inner = apertures[i-1]
+                    mask_outer = aper_outer.to_mask(method='center').to_image(data.shape).astype(bool)
+                    mask_inner = aper_inner.to_mask(method='center').to_image(data.shape).astype(bool)
+                    mask_img = mask_outer & (~mask_inner)
+                    median_val = np.nanmedian(data[mask_img])
+                    s = mask_img & (~np.isfinite(data))
+                    if s.sum() <= max_nan_frac * mask_img.sum():
+                        data_filled[s] = median_val
+                    else:
+                        data_filled[s] = getattr(cutoutdata,replace_with)[s].copy()
+                        raise_replace_warning = True
+                if i == len(apertures)-1: 
+                    aper = apertures[i]
+                    mask = aper.to_mask(method='center').to_image(data.shape).astype(bool)
+                    s = ~np.isfinite(data) & ~mask # outside the last aperture
+                    if s.sum() == 0:
+                        continue
+                    elif s.sum() <= max_nan_frac * mask.sum():
+                        median_val = np.nanmedian(data[~mask])
+                        data_filled[s] = median_val
+                        # logger.warning('filling NaN pixels outside the largest aperture with the median value')
+                    else:
+                        logger.error('too many NaN pixels outside the largest aperture. Skipping...')
+
             setattr(cutoutdata,apply_attr+'_filled',data_filled)
     if raise_replace_warning:
-        print('WARNING: some NaN values were replaced with the reference image')
-    return galaxy
+        logger.warning('some NaN values were replaced with the reference image')
+    # return galaxy
 
 class IsoPhotApertures():
     def __init__(self,cutoutdata):
@@ -114,25 +253,29 @@ class IsoPhotApertures():
         Z_cumsum = np.cumsum(Z_flatten)
         Z_cumsum /= Z_cumsum.max()
         inverse_cumsum_interp = interp1d(Z_cumsum,Z_flatten)
-        sb_levels = [inverse_cumsum_interp(frac) for frac in frac_enc]
 
         # Find the contour at the specified levels
+        frac_enc_passed = []
         apertures = []
         semi_major_axes = []
         areas = []
-        for lvl in sb_levels:
-            contours = measure.find_contours(Z, lvl)
-            contours = np.squeeze(contours)
-            contours = np.flip(contours,axis=1)
-            ellip = cv2.fitEllipse(contours.astype(np.float32))
-            (x0,y0),(ax_major,ax_minor),angle = ellip
-            aperture = EllipticalAperture((x0, y0), ax_major/2,
-                                          ax_minor/2, 
-                                        theta=np.radians(angle))
-            apertures.append(aperture)
-            semi_major_axes.append(ax_major/2)
-            areas.append(aperture.area)
-        self.frac_enc = frac_enc
+        for frac in frac_enc:
+            try:
+                lvl = inverse_cumsum_interp(frac)
+                contours = measure.find_contours(Z, lvl)
+                contours = np.squeeze(contours)
+                contours = np.flip(contours,axis=1)
+                ellip = cv2.fitEllipse(contours.astype(np.float32))
+                (x0,y0),(ax_major,ax_minor),angle = ellip
+                aperture_kwargs = dict(positions=(x0,y0),a=ax_major/2,b=ax_minor/2,theta=np.radians(angle))
+                aperture = EllipticalAperture(**aperture_kwargs)
+                frac_enc_passed.append(frac)
+                apertures.append(aperture)
+                semi_major_axes.append(ax_major/2)
+                areas.append(aperture.area)
+            except Exception:
+                continue
+        self.frac_enc = frac_enc_passed
         self.apertures = apertures
         self.areas = np.array(areas)
         self.semi_major_axes = np.array(semi_major_axes)    
@@ -221,7 +364,8 @@ class IsoPhotApertures():
             s = np.isfinite(xdata) & np.isfinite(ydata)
             interp_func = csaps(xdata[s],ydata[s],normalizedsmooth=True)
             y_interp = interp_func(xdata,extrapolate=False)
-            self.petro_idx_interp = y_interp
+        else:
+            y_interp = self.petro_idx_interp
 
         fig,(ax1,ax2) = plt.subplots(1,2,figsize=(10,4))
         astroplot(self.flux_data,ax=ax1)
@@ -296,12 +440,14 @@ class CutoutDataPhotometry():
         sky_apertures = []
         for x0,y0,theta in zip(x0_vals,y0_vals,theta_vals):
             aperture_sky = self.aperture.copy()
-            
-            # avoid center -- this area can be biased by Sersic profile fit
-            x_dist_from_center = abs((x0-data_sky.shape[1]/2))
-            y_dist_from_center = abs((y0-data_sky.shape[1]/2))
-            center_mask_in_pix = center_mask * max(aperture_sky.a,aperture_sky.b)
-            if x_dist_from_center**2 +  y_dist_from_center**2 < center_mask_in_pix**2:
+            aperture_mask = aperture_sky.copy()
+            aperture_mask.a *= center_mask
+            aperture_mask.b *= center_mask
+            aperture_mask_img = aperture_mask.to_mask(method='center').to_image(data_sky.shape).astype(bool)
+            if int(x0) >= data_sky.shape[1] or int(y0) >= data_sky.shape[0]:
+                continue
+            if aperture_mask_img[int(y0),int(x0)]:
+                # avoid center -- this area can be biased by Sersic profile fit
                 continue
             
             # update aperture and do photometry
