@@ -6,7 +6,7 @@ from scipy.interpolate import interp1d
 from astropy.convolution import convolve
 from astropy.nddata import block_reduce, Cutout2D
 from astropy import units as u
-from photutils.psf import TopHatWindow, create_matching_kernel
+from photutils.psf.matching import TopHatWindow, create_matching_kernel
 from photutils.aperture import EllipticalAperture, aperture_photometry
 
 from copy import deepcopy
