@@ -8,8 +8,6 @@ import pandas as pd
 import logging
 from scipy import stats
 
-from photutils import CircularAperture
-
 import astropy.units as u
 from astropy.stats import sigma_clip
 from astropy.nddata import Cutout2D
