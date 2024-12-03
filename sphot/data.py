@@ -13,7 +13,7 @@ from scipy.optimize import minimize, leastsq
 from scipy import stats
 from scipy.stats import multivariate_normal
 
-from photutils import CircularAperture
+from photutils.aperture import CircularAperture
 from photutils.detection import DAOStarFinder
 from photutils.background import MMMBackground, MADStdBackgroundRMS
 

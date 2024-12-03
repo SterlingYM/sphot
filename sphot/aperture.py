@@ -125,7 +125,7 @@ def aperture_routine(galaxy,petro=0.5,center_mask=3.5,plot=True,
         if plot:
             aperphot.plot()
         cutoutdata.dmag_PSFcorr = aperphot.magAB - _cutoutdata.mag_raw
-        cutoutdata.dmag_PSFcorr_err = _cutoutdata.mag_raw_err
+        cutoutdata.dmag_PSFcorr_err = np.sqrt(aperphot.magAB_err**2 + _cutoutdata.mag_raw_err**2)
     
     for filt in galaxy.filters:
         cutoutdata = galaxy.images[filt]
