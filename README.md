@@ -5,4 +5,4 @@ This package is under development.
 
 ![](docs/images/concept.jpg)
 
-For usage and tutorials, please see [the documentation page](https://sphot.readthedocs.io/en/latest/).
+For usage and tutorials, please see [the documentation page](https://sphot.readthedocs.io/en/latest/) (under construction...).
