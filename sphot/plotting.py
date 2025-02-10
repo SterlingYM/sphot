@@ -154,7 +154,7 @@ def plot_profile2d(data,ax=None,fig=None,lower_limit_percentile=20,
     else:
         ax_side = fig.add_axes([pos.x1,pos.y0,pos.width/4,pos.height])
     
-    upper_limit = norm((np.nanmax(data)+offset)*1.5)
+    upper_limit = norm((np.nanmax(data)+offset))
     lower_limit = np.nanpercentile(norm(data+offset).data,lower_limit_percentile)
     for row in data:
         if np.isfinite(row).sum() == 0:
@@ -187,7 +187,9 @@ def plot_profile2d(data,ax=None,fig=None,lower_limit_percentile=20,
         ax_side.invert_xaxis()
     return norm,offset
         
-def plot_sphot_results(cutoutdata,right_attr='psf_sub_data',dpi=100,**kwargs):
+def plot_sphot_results(cutoutdata,right_attr='psf_sub_data',dpi=100,
+                       percentiles=[0.1,99.9],**kwargs):
+    print('using percentiles',percentiles)
     sky_model = getattr(cutoutdata,'sky_model',None)
     if sky_model is None:
         sky_model = cutoutdata._bkg_level
@@ -211,10 +213,11 @@ def plot_sphot_results(cutoutdata,right_attr='psf_sub_data',dpi=100,**kwargs):
                  ha='center',va='center',fontsize=28,color='k')
     
     cmap = kwargs.get('cmap','viridis')
-    norm,offset = astroplot(rawdata_bksub,ax=ax1,percentiles=[0.1,99.9],cmap=cmap)
+    norm,offset = astroplot(rawdata_bksub,ax=ax1,percentiles=percentiles,cmap=cmap)
     kwargs['norm'] = norm
     kwargs['offset'] = offset
     kwargs['cmap'] = cmap
+    astroplot(rawdata_bksub-psf_model_total,ax=ax1,**kwargs)
     plot_profile2d(rawdata_bksub,ax0,fig,left=True,**kwargs)
     astroplot(bestfit_sersic_img,ax=ax2,**kwargs)
     astroplot(sersic_residual,ax=ax3,**kwargs)
@@ -240,13 +243,14 @@ def plot_sphot_results(cutoutdata,right_attr='psf_sub_data',dpi=100,**kwargs):
     ax4.annotate("",xy=(1.7,1.55), xytext=(0.33,0.99), arrowprops=arrowprops2, **arrow_kwargs)
     ax1.annotate("",xy=(2.2,0.67), xytext=(1.0,0.67), arrowprops=arrowprops3, zorder=10,**arrow_kwargs)
     ax2.annotate('Sersic\nfit',xy=(0.55,1.4), xycoords='axes fraction', ha='center', va='center', fontsize=25)
+    ax2.annotate('mask\nbad pixels',xy=(0.55,1.9), xycoords='axes fraction', ha='center', va='center', fontsize=23)
     ax2.annotate('remove\nprofile',xy=(0.57,-0.55), xycoords='axes fraction', ha='center', va='center', fontsize=25)
-    ax3.annotate('PSF fit',xy=(-0.55,0.5), xycoords='axes fraction', ha='center', va='center', fontsize=25)
-    ax4.annotate('remove\nPSF',xy=(0.5,1.65), xycoords='axes fraction', ha='center', va='center', fontsize=25)
+    ax3.annotate('fit\nPSF scene',xy=(-0.55,0.5), xycoords='axes fraction', ha='center', va='center', fontsize=25)
+    ax4.annotate('remove\nstars',xy=(0.44,1.65), xycoords='axes fraction', ha='center', va='center', fontsize=25)
 
     ax0.text(0.1,0.88,'A',transform=ax0.transAxes,ha='center',va='center',fontsize=30,color='w')
-    ax1.text(0.1,0.88,'A\'',transform=ax1.transAxes,ha='center',va='center',fontsize=30,color='w')
+    ax1.text(0.1,0.88,'S',transform=ax1.transAxes,ha='center',va='center',fontsize=30,color='w')
     ax2.text(0.1,0.88,'B',transform=ax2.transAxes,ha='center',va='center',fontsize=30,color='w')
     ax3.text(0.3,0.88,'C: A-B',transform=ax3.transAxes,ha='center',va='center',fontsize=30,color='w')
     ax4.text(0.1,0.88,'D',transform=ax4.transAxes,ha='center',va='center',fontsize=30,color='w')
-    ax5.text(0.2,0.88,'S: A-D',transform=ax5.transAxes,ha='center',va='center',fontsize=30,color='w')
+    ax5.text(0.2,0.88,r'S$_\mathrm{\ final}$',transform=ax5.transAxes,ha='center',va='center',fontsize=30,color='w')

@@ -201,7 +201,12 @@ def run_sphot(datafile,
         logger.info('----- Starting aperphot -----')
         aperphot_kwargs = kwargs.copy()
         aperphot_kwargs.update(config['aperture'])
-        run_aperphot(galaxy=galaxy,**aperphot_kwargs)
+        aper_sci = run_aperphot(galaxy=galaxy,**aperphot_kwargs)
+        
+        # save aperture info
+        for key in ['positions','a','b','theta']:
+            setattr(galaxy,'aper_sci_'+key,getattr(aper_sci,key))
+        # setattr(galaxy,'aper_sci_frac_enclosed',frac_enclosed)
         galaxy.save(out_path)
             
     logger.info('Completed Sphot')

@@ -62,6 +62,7 @@ def aperture_routine(galaxy,petro=0.5,center_mask=3.5,plot=True,
         iso_apers.measure_flux(measure_on= measure_on + '_filled')
         iso_apers.calc_petrosian_indices(bin_size=2)
         aper_sci = iso_apers.get_aper_at(petro=petro)
+        # frac_enclosed = iso_apers.frac_enclosed_at_aper_sci
         if plot:
             iso_apers.plot()
     else:
@@ -78,12 +79,14 @@ def aperture_routine(galaxy,petro=0.5,center_mask=3.5,plot=True,
         aperphot.measure_sky(measure_on = measure_sky_on + '_filled',
                             center_mask = center_mask,
                             mode='grid')
+        aperphot.measure_frac(measure_on=measure_on + '_filled')
         aperphot.calc_mag()
         if plot:
             aperphot.plot()
         cutoutdata.aper_petro = petro
         cutoutdata.mag_raw = aperphot.magAB
         cutoutdata.mag_raw_err = aperphot.magAB_err
+        cutoutdata.aper_frac_enclosed = aperphot.frac_enclosed
     if not correct_PSF:
         return aper_sci
     
@@ -350,6 +353,7 @@ class IsoPhotApertures():
         s_ = np.s_[int(bin_size/2):-int(bin_size/2)]
         petro_idx = np.ones_like(self.fluxes_enclosed) * np.nan
         petro_idx[s_] = sb_in_annulus * self.areas[s_] / self.fluxes_enclosed[s_]
+        self.petro_flux_enclosed = self.fluxes_enclosed[s_]
         self.petro_s_ = s_ # slice at which petrosian indices are calculated
         self.petro_idx = petro_idx
         self.petrosian_indices = self.petro_idx
@@ -402,6 +406,8 @@ class IsoPhotApertures():
             idx = np.nanargmin(np.abs(self.flux_frac_levels - flux_frac))
         else:
             raise ValueError('either petro or flux_frac must be provided')
+        # self.frac_enclosed_at_aper_sci = self.petro_flux_enclosed[np.argmin(np.abs(self.petro_idx - petro))] / self.petro_flux_enclosed.max()
+        # self.frac_enclosed_at_aper_sci = self.frac_enc[idx]
         return self.apertures[idx]
     
 class CutoutDataPhotometry():
@@ -484,7 +490,15 @@ class CutoutDataPhotometry():
             self.flux_err = phot['aperture_sum_err'].value[0]      
         else:
             self.flux_err = np.nan          
-                        
+              
+    def measure_frac(self,measure_on='residual_masked'):
+        '''measure fraction of flux enclosed within the aperture'''
+        data = getattr(self.cutoutdata,measure_on).copy()
+        bkg_flux = self.sky_mean / self.aperture.area
+        
+        flux_total = (data - bkg_flux).sum()
+        self.frac_enclosed = (self.flux - self.sky_mean) / flux_total
+                
     def calc_mag(self,pixel_scale=0.03):
         counts_Mjy_per_Sr = self.flux - self.sky_mean
         errors_Mjy_per_Sr = np.sqrt(self.flux_err**2 + self.sky_std**2)
