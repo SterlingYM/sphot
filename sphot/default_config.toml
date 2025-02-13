@@ -16,3 +16,18 @@ aperture_radius = 3
 fitter_maxiters = 300
 IterativePSFPhotometry_maxiters = 5
 grouper_separation_in_psfsigma = 2
+
+[aperture]
+petro = 0.5
+center_mask=4.0
+plot=true
+isophot_base_filter = 'F150W'
+isophot_frac_min = 0.05
+isophot_frac_max = 0.95
+fit_isophot_to='sersic_modelimg'
+measure_on = 'psf_sub_data'
+error_on = 'psf_sub_data_error'
+measure_sky_on='residual_masked'
+fill_max_nan_frac=0.7
+fill_replace_with='sersic_modelimg'
+PSF_corr_base_filter='F090W'
