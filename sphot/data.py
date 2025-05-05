@@ -315,6 +315,10 @@ class MultiBandCutout():
         fig.suptitle(f'{title} {self.name} {attr}',fontsize=15)    
         if show:
             plt.show()
+    
+    def set_size(self,size):
+        for filt in self.filters:
+            self.images[filt].galaxy_size = size
         
     def crop_in(self,x0,y0,size):
         ''' crop-in and re-generate the MultiBandCutout object.
@@ -359,10 +363,26 @@ class MultiBandCutout():
                     f.create_dataset(g_key,data=str_to_json(g_val))
         logger.info(f'Saved to {filepath}')
         
+def read(filepath,**kwargs):
+    ''' an alias to load_h5data '''
+    return load_h5data(filepath,**kwargs)
 
-def load_h5data(filepath,name='',filters=[],PSFs_dict=None,
+def load_h5data(filepath,name='',
+                filters=[],
+                psffile=None,
                 psf_oversample=4):
     galaxy = MultiBandCutout(name = name)
+
+    # load psf file
+    if psffile is None:
+        PSFs_dict = None
+    else:
+        PSFs_dict = {}
+        psf_oversample = None
+        with h5py.File(psffile, 'r') as hdf:
+            for key,val in hdf.items():
+                PSFs_dict[key] = val[()]
+            psf_oversample = hdf.attrs['oversample']        
         
     with h5py.File(filepath,'r') as f:
         if len(filters) == 0:

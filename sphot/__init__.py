@@ -12,3 +12,6 @@ sphot_handler = logging.StreamHandler()
 sphot_handler.setFormatter(sphot_formatter)
 logger.addHandler(sphot_handler)
 
+from .data import read
+from .core import *
+
