@@ -310,6 +310,14 @@ class MultiBandCutout():
             _data = getattr(self.images[filt],attr,None)
             if _data is None:
                 continue
+            if np.all(~np.isfinite(_data)):
+                logger.warning(f'No data for {filt}')
+                ax.imshow(np.ones_like(_data),cmap='gray_r')
+                ax.set_title(filt)
+                ax.set_xticks([])
+                ax.set_yticks([])
+                ax.text(0.5,0.5,'No data',ha='center',va='center',transform=ax.transAxes)
+                continue
             astroplot(_data,ax=ax,**kwargs)
             ax.set_title(filt)
         fig.suptitle(f'{title} {self.name} {attr}',fontsize=15)    
