@@ -373,7 +373,10 @@ class MultiBandCutout():
         
 def read(filepath,**kwargs):
     ''' an alias to load_h5data '''
-    return load_h5data(filepath,**kwargs)
+    if '_sphot.h5' in filepath:
+        return read_sphot_h5(filepath,**kwargs)
+    else:
+        return load_h5data(filepath,**kwargs)
 
 def load_h5data(filepath,name='',
                 filters=[],

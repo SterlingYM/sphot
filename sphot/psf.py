@@ -11,7 +11,7 @@ from astropy.stats import sigma_clip
 
 from photutils.aperture import CircularAperture, EllipticalAperture
 from photutils.psf import (SourceGrouper, IterativePSFPhotometry, 
-                           PSFPhotometry, FittableImageModel)
+                           PSFPhotometry, ImagePSF)#FittableImageModel)
 from photutils.detection import DAOStarFinder
 from photutils.background import (LocalBackground, MMMBackground,
                                   MADStdBackgroundRMS)
@@ -354,10 +354,14 @@ def do_psf_photometry(data,psfimg,psf_oversample,psf_sigma,
     mmm_bkg = MMMBackground()
 
     # PSF image to model
-    psf_model = FittableImageModel(psfimg, flux=1.0, 
-                                   x_0=0, y_0=0, 
-                                   oversampling=psf_oversample, 
-                                   fill_value=0.0)
+    # psf_model = FittableImageModel(psfimg, flux=1.0, 
+    #                                x_0=0, y_0=0, 
+    #                                oversampling=psf_oversample, 
+    #                                fill_value=0.0)
+    psf_model = ImagePSF(psfimg, flux=1.0, 
+                         x_0=0, y_0=0, 
+                         oversampling=psf_oversample, 
+                         fill_value=0.0)   
 
     # take data stats & prepare background-subtracted data
     try:
