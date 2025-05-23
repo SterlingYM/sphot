@@ -42,7 +42,7 @@ def main():
     datafiles, kwargs = argv_to_kwargs(sys.argv)
                 
     # switch logging option based on how this file is running
-    console_wrapper = prep_console_wrapper()
+    console_wrapper = prep_console_wrapper(force_standard_output=kwargs['force_standard_output'])
             
     # run sphot
     kwargs['plot'] = False
@@ -68,6 +68,7 @@ def argv_to_kwargs(args):
     continue_scalefit = False
     rerun_scalefit = False
     photometry = False
+    force_standard_output = False
     filters_to_fit = config['core']['filters'].copy()
     out_folder = './'
 
@@ -110,6 +111,9 @@ def argv_to_kwargs(args):
             elif arg.startswith('--filter'):
                 filters_to_fit = np.atleast_1d(arg.split('=')[1].split(','))
                 logger.info(f'filters to fit: {filters_to_fit}')
+            elif arg.startswith('--standard_output'):
+                force_standard_output=True
+                logger.info('All outputs will be printed to the standard output')
             else:
                 logger.info(f'unknown options: {arg}')   
                 
@@ -119,7 +123,8 @@ def argv_to_kwargs(args):
                   rerun_scalefit=rerun_scalefit,
                   photometry=photometry,
                   out_folder=out_folder,
-                  filters_to_fit=filters_to_fit)
+                  filters_to_fit=filters_to_fit,
+                  force_standard_output=force_standard_output)
     return datafiles, kwargs
 
 def run_sphot(datafile,
@@ -211,8 +216,11 @@ def run_sphot(datafile,
             
     logger.info('Completed Sphot')
 
-def prep_console_wrapper():
-    if "SLURM_JOB_ID" in os.environ:
+def prep_console_wrapper(force_standard_output=False):
+    if force_standard_output:
+        def console_wrapper(func,*args,**kwargs):
+            return func(*args,**kwargs)
+    elif "SLURM_JOB_ID" in os.environ:
         from rich.console import Console
         def console_wrapper(func,*args,**kwargs):
             slurm_jobid = os.environ.get("SLURM_ARRAY_JOB_ID")
