@@ -15,21 +15,20 @@ from .data import (CutoutData, MultiBandCutout,
 
 def load_and_crop(datafile,filters,psffile=None,#folder_PSF=None,
                   base_filter='F150W',plot=True,custom_initial_crop=False,**kwargs):
-    # load PSFs
-    if psffile is None:
-        PSFs_dict = None
-    else:
-        PSFs_dict = {}
-        psf_oversample = None
-        with h5py.File(psffile, 'r') as hdf:
-            for key,val in hdf.items():
-                PSFs_dict[key] = val[()]
-            psf_oversample = hdf.attrs['oversample']
+    # # load PSFs
+    # if psffile is None:
+    #     PSFs_dict = None
+    # else:
+    #     PSFs_dict = {}
+    #     psf_oversample = None
+    #     with h5py.File(psffile, 'r') as hdf:
+    #         for key,val in hdf.items():
+    #             PSFs_dict[key] = val[()]
+    #         psf_oversample = hdf.attrs['oversample']
             
     # load data
     galaxy_ID = os.path.splitext(os.path.split(datafile)[-1])[0]
-    galaxy = load_h5data(datafile, galaxy_ID, filters, PSFs_dict,
-                         psf_oversample=psf_oversample)
+    galaxy = load_h5data(datafile, galaxy_ID, filters, psffile=psffile)
     if plot:
         galaxy.plot()
         
