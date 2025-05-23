@@ -13,18 +13,9 @@ from .fitting import SphotModel
 from .data import (CutoutData, MultiBandCutout, 
                         load_h5data, get_data_annulus)
 
-def load_and_crop(datafile,filters,psffile=None,#folder_PSF=None,
-                  base_filter='F150W',plot=True,custom_initial_crop=False,**kwargs):
-    # # load PSFs
-    # if psffile is None:
-    #     PSFs_dict = None
-    # else:
-    #     PSFs_dict = {}
-    #     psf_oversample = None
-    #     with h5py.File(psffile, 'r') as hdf:
-    #         for key,val in hdf.items():
-    #             PSFs_dict[key] = val[()]
-    #         psf_oversample = hdf.attrs['oversample']
+def load_and_crop(datafile,filters,psffile=None,
+                  base_filter='F150W',plot=True,custom_initial_crop=False,
+                  auto_crop=True,auto_crop_factor=8,**kwargs):
             
     # load data
     galaxy_ID = os.path.splitext(os.path.split(datafile)[-1])[0]
@@ -49,8 +40,9 @@ def load_and_crop(datafile,filters,psffile=None,#folder_PSF=None,
     galaxy_size = cutoutdata.size_guess
     x0, y0 = cutoutdata.x0_guess, cutoutdata.y0_guess
 
-    cutout_size = galaxy_size * 8 * 2 # number of pixels in each axis (hence x2)
-    galaxy.crop_in(x0, y0, cutout_size)
+    if auto_crop:
+        cutout_size = galaxy_size * auto_crop_factor * 2 # number of pixels in each axis (hence x2)
+        galaxy.crop_in(x0, y0, cutout_size)
     if plot:
         galaxy.plot()
         plt.show()

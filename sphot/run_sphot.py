@@ -69,7 +69,7 @@ def argv_to_kwargs(args):
     rerun_scalefit = False
     photometry = False
     force_standard_output = False
-    filters_to_fit = config['core']['filters'].copy()
+    filters_to_fit = config['prep']['filters'].copy()
     out_folder = './'
 
     # parse command line arguments
@@ -78,7 +78,7 @@ def argv_to_kwargs(args):
     if len(args) > 1:
         for arg in args[1:]:
             if '.h5' in arg:
-                if arg == config['core']['PSF_file']:
+                if arg == config['prep']['PSF_file']:
                     continue
                 datafiles.append(arg)
             elif arg == '--rerun_all':
@@ -135,7 +135,7 @@ def run_sphot(datafile,
     ''' main commands are put in this dummy function so that the rich output can be forwarded to a log file when running in slurm'''
 
     base_filter = config['core']['base_filter']
-    blur_psf = config['core']['blur_psf']
+    blur_psf = config['prep']['blur_psf']
     iter_basefit = config['core']['iter_basefit']
     iter_scalefit = config['core']['iter_scalefit']
 
@@ -143,12 +143,14 @@ def run_sphot(datafile,
     if initial_run:
         logger.info(f'Loading a new galaxy data: {[datafile]}')
         galaxy = load_and_crop(datafile,
-                               config['core']['filters'],
-                               config['core']['PSF_file'],
+                               config['prep']['filters'],
+                               config['prep']['PSF_file'],
                                base_filter = base_filter,
                                plot = False,
-                               custom_initial_crop = config['core']['custom_initial_crop'],
-                               sigma_guess = config['core']['sigma_guess'])
+                               custom_initial_crop = config['prep']['custom_initial_crop'],
+                               sigma_guess = config['prep']['sigma_guess'],
+                               auto_crop = config['prep']['auto_crop'],
+                               auto_crop_factor = config['prep']['auto_crop_factor'])
         out_path = os.path.join(out_folder,f'{galaxy.name}_sphot.h5')
         logger.info(f'Galaxy data loaded: sphot file will be saved as {out_path}')
         rerun_basefit = True
