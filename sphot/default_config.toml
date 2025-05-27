@@ -1,14 +1,18 @@
-[core]
+[prep]
 filters = ['F555W', 'F814W', 'F090W', 'F150W', 'F160W', 'F277W']
+blur_psf = {F555W = 4, F814W = 5, F090W = 3.8, F150W = 3.8, F160W = 9, F277W = 9}
 PSF_file = 'PSFdata.h5'
+custom_initial_crop = 1
+sigma_guess = 10
+auto_crop = true
+auto_crop_factor = 8 # size of each axis in units of STD of best-fit Gaussian
+
+[core]
 base_filter = 'F150W'
 iter_basefit = 10
 iter_scalefit = 3
 fit_complex_model = false
 allow_refit = false
-custom_initial_crop = 1
-sigma_guess = 10
-blur_psf = {F555W = 4, F814W = 5, F090W = 3.8, F150W = 3.8, F160W = 9, F277W = 9}
 
 [psf]
 mask_aper_size_in_r_eff = 2.5
