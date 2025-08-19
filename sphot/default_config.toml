@@ -1,7 +1,7 @@
 [prep]
 filters = ['F555W', 'F814W', 'F090W', 'F150W', 'F160W', 'F277W']
-blur_psf = {F555W = 4, F814W = 5, F090W = 3.8, F150W = 3.8, F160W = 9, F277W = 9}
 PSF_file = 'PSFdata.h5'
+blur_psf = {F555W = 4, F814W = 5, F090W = 3.8, F150W = 3.8, F160W = 9, F277W = 9}
 custom_initial_crop = 1
 sigma_guess = 10
 auto_crop = true

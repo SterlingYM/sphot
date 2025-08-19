@@ -16,7 +16,7 @@ from .fitting import SphotModel
 from .data import (CutoutData, MultiBandCutout, 
                         load_h5data, get_data_annulus)
 
-from photutils.isophote import EllipseGeometry, build_ellipse_model
+from photutils.isophote import Ellipse,EllipseGeometry, build_ellipse_model
 import petrofit as pf
 
 
@@ -25,14 +25,18 @@ def update_model_with_isophot_fit(model,cutoutdata,fit_to='data',
                               sma_cutout_factor=8):
     ''' provide a better initial guesses by fitting to isophot'''
     # get isophot
-    image = getattr(cutoutdata,fit_to)
-    geometry = EllipseGeometry(x0=image.shape[1]//2, 
-                            y0=image.shape[0]//2, 
+    image = getattr(cutoutdata,fit_to).copy()
+    x0_guess = getattr(cutoutdata,'x0_guess')
+    y0_guess = getattr(cutoutdata,'y0_guess')
+
+    geometry = EllipseGeometry(x0=y0_guess, # ugh
+                            y0=x0_guess, 
                             sma= cutoutdata.galaxy_size, 
                             eps=0.5,
                             pa=0.0 )
     ellipse = Ellipse(image, geometry)
     isolist = ellipse.fit_image()
+
     isophot_model_image = build_ellipse_model(image.shape, isolist)
     
     # make a small cutout
@@ -48,11 +52,20 @@ def update_model_with_isophot_fit(model,cutoutdata,fit_to='data',
                               size=(sma_cutout,sma_cutout)).data
     
     # update model
-    model_init_x_0 = model.x_0
-    model_init_y_0 = model.y_0
+    isophot_cutout = np.nan_to_num(isophot_cutout,0)
+    weights = np.ones_like(isophot_cutout)
+    weights[isophot_cutout == 0.] = 0
+    model_init_x_0 = model.x_0.copy()
+    model_init_y_0 = model.y_0.copy()
+    
+    # update initial guesses
+    model.amplitude = np.nanmedian(isophot_cutout)
+    model.x_0 = isophot_cutout.shape[1] / 2
+    model.y_0 = isophot_cutout.shape[0] / 2
     fitted_model, _ = pf.fit_model(
         image=isophot_cutout,
         model=model,
+        weights = weights,
         maxiter=10000,
     )
     fitted_model.x_0 = model_init_x_0
@@ -96,6 +109,8 @@ def load_and_crop(datafile,filters,psffile=None,
         plt.show()
     for cutoutdata in galaxy.image_list:
         cutoutdata.galaxy_size = galaxy_size
+    for cutoutdata in galaxy.image_list:
+        cutoutdata.data[cutoutdata.data == 0.] = np.nan
     return galaxy
 
 
