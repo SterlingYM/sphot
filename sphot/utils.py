@@ -29,47 +29,50 @@ def update_model_with_isophot_fit(model,cutoutdata,fit_to='data',
     x0_guess = getattr(cutoutdata,'x0_guess')
     y0_guess = getattr(cutoutdata,'y0_guess')
 
-    geometry = EllipseGeometry(x0=y0_guess, # ugh
-                            y0=x0_guess, 
-                            sma= cutoutdata.galaxy_size, 
-                            eps=0.5,
-                            pa=0.0 )
-    ellipse = Ellipse(image, geometry)
-    isolist = ellipse.fit_image()
+    try:
+        geometry = EllipseGeometry(x0=y0_guess, # ugh
+                                y0=x0_guess, 
+                                sma= cutoutdata.galaxy_size, 
+                                eps=0.,
+                                pa=0.0 )
+        ellipse = Ellipse(image, geometry)
+        isolist = ellipse.fit_image()
 
-    isophot_model_image = build_ellipse_model(image.shape, isolist)
-    
-    # make a small cutout
-    short_list = isolist.to_table()
-    intensity_max = short_list['intens'].max()
-    short_list = short_list[short_list['intens'] >= crop_intensity_frac * intensity_max]
-    sma_cutout = short_list['sma'].max() * sma_cutout_factor
+        isophot_model_image = build_ellipse_model(image.shape, isolist)
+        
+        # make a small cutout
+        short_list = isolist.to_table()
+        intensity_max = short_list['intens'].max()
+        short_list = short_list[short_list['intens'] >= crop_intensity_frac * intensity_max]
+        sma_cutout = short_list['sma'].max() * sma_cutout_factor
 
-    x0 = np.median(short_list['x0'])
-    y0 = np.median(short_list['y0'])
-    isophot_cutout = Cutout2D(isophot_model_image,
-                              position=(x0,y0),
-                              size=(sma_cutout,sma_cutout)).data
-    
-    # update model
-    isophot_cutout = np.nan_to_num(isophot_cutout,0)
-    weights = np.ones_like(isophot_cutout)
-    weights[isophot_cutout == 0.] = 0
-    model_init_x_0 = model.x_0.copy()
-    model_init_y_0 = model.y_0.copy()
-    
-    # update initial guesses
-    model.amplitude = np.nanmedian(isophot_cutout)
-    model.x_0 = isophot_cutout.shape[1] / 2
-    model.y_0 = isophot_cutout.shape[0] / 2
-    fitted_model, _ = pf.fit_model(
-        image=isophot_cutout,
-        model=model,
-        weights = weights,
-        maxiter=10000,
-    )
-    fitted_model.x_0 = model_init_x_0
-    fitted_model.y_0 = model_init_y_0
+        x0 = np.median(short_list['x0'])
+        y0 = np.median(short_list['y0'])
+        isophot_cutout = Cutout2D(isophot_model_image,
+                                position=(x0,y0),
+                                size=(sma_cutout,sma_cutout)).data
+        
+        # update model
+        isophot_cutout = np.nan_to_num(isophot_cutout,0)
+        weights = np.ones_like(isophot_cutout)
+        weights[isophot_cutout == 0.] = 0
+        model_init_x_0 = model.x_0.copy()
+        model_init_y_0 = model.y_0.copy()
+        
+        # update initial guesses
+        model.amplitude = np.nanmedian(isophot_cutout)
+        model.x_0 = isophot_cutout.shape[1] / 2
+        model.y_0 = isophot_cutout.shape[0] / 2
+        fitted_model, _ = pf.fit_model(
+            image=isophot_cutout,
+            model=model,
+            weights = weights,
+            maxiter=10000,
+        )
+        fitted_model.x_0 = model_init_x_0
+        fitted_model.y_0 = model_init_y_0
+    except Exception:
+        fitted_model = model.copy()
     return fitted_model
 
 
@@ -104,6 +107,15 @@ def load_and_crop(datafile,filters,psffile=None,
     if auto_crop:
         cutout_size = galaxy_size * auto_crop_factor * 2 # number of pixels in each axis (hence x2)
         galaxy.crop_in(x0, y0, cutout_size)
+        for cutoutdata in galaxy.image_list:
+            cutoutdata.galaxy_size = galaxy_size
+            cutoutdata.x0_guess = cutout_size / 2
+            cutoutdata.y0_guess = cutout_size / 2
+    else:
+        for cutoutdata in galaxy.image_list:
+            cutoutdata.galaxy_size = galaxy_size
+            cutoutdata.x0_guess = x0
+            cutoutdata.y0_guess = y0
     if plot:
         galaxy.plot()
         plt.show()
