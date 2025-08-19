@@ -15,4 +15,5 @@ logger.addHandler(sphot_handler)
 from .data import read
 from .core import *
 from .plotting import plot_sphot_results as plot_results
+from .plotting import astroplot
 

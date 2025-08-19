@@ -372,7 +372,8 @@ class MultiBandCutout():
         logger.info(f'Saved to {filepath}')
         
 def read(filepath,**kwargs):
-    ''' an alias to load_h5data '''
+    ''' a convenient wrapper for loading h5 files.
+    It can load both sphot h5 files and raw data h5 files.'''
     if '_sphot.h5' in filepath:
         return read_sphot_h5(filepath,**kwargs)
     else:
@@ -382,6 +383,7 @@ def load_h5data(filepath,name='',
                 filters=[],
                 psffile=None,
                 psf_oversample=4):
+    ''' load raw data h5 file and turn it into a MultiBandCutout object. '''
     galaxy = MultiBandCutout(name = name)
 
     # load psf file
@@ -468,7 +470,7 @@ def load_sphotfile(filepath):
     return read_sphot_h5(filepath)
     
 def read_sphot_h5(filepath):
-    ''' load h5 file to sphot objects '''
+    ''' load sphot h5 file and turn it into an sphot object '''
     galaxy_loaded = MultiBandCutout()
     with h5py.File(filepath,'r') as f:
         for key in f.keys():

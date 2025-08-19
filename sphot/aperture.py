@@ -188,8 +188,15 @@ def fill_nans(galaxy,apertures,
     for apply_attr in apply_to:
         for filt in galaxy.filters:
             cutoutdata = galaxy.images[filt]
-            data = getattr(cutoutdata,apply_attr).copy()
-            data_filled = data.copy()
+            data = getattr(cutoutdata,apply_attr,None)
+
+            if data is None:
+                data_filled = np.ones_like(cutoutdata._rawdata) * np.nan
+                setattr(cutoutdata,apply_attr+'_filled',data_filled)
+                continue
+            else:
+                data = data.copy()
+                data_filled = data.copy()
             
             for i in range(len(apertures)):
                 if i == 0:
@@ -470,6 +477,9 @@ class CutoutDataPhotometry():
             if np.isfinite(phot['aperture_sum'].value[0]):
                 aperture_sum_vals.append(phot['aperture_sum'].value[0])
                 sky_apertures.append(aperture_sky)
+
+        if len(aperture_sum_vals) == 0:
+            logger.error('No valid sky apertures found. Try reducing the center_mask value.')
         self.data_sky = data_sky
         self.sky_apertures = sky_apertures
         self.sky_values = np.array(aperture_sum_vals)

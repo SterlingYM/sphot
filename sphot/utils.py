@@ -3,15 +3,63 @@ import matplotlib.pyplot as plt
 import h5py
 import glob
 import os
+
 import astropy.units as u
 from astropy.modeling import models
 from astropy.table import Table, vstack
+from astropy.nddata import Cutout2D
+
 from tqdm.auto import tqdm
 from termcolor import colored
 
 from .fitting import SphotModel
 from .data import (CutoutData, MultiBandCutout, 
                         load_h5data, get_data_annulus)
+
+from photutils.isophote import EllipseGeometry, build_ellipse_model
+import petrofit as pf
+
+
+def update_model_with_isophot_fit(model,cutoutdata,fit_to='data',
+                              crop_intensity_frac=0.01,
+                              sma_cutout_factor=8):
+    ''' provide a better initial guesses by fitting to isophot'''
+    # get isophot
+    image = getattr(cutoutdata,fit_to)
+    geometry = EllipseGeometry(x0=image.shape[1]//2, 
+                            y0=image.shape[0]//2, 
+                            sma= cutoutdata.galaxy_size, 
+                            eps=0.5,
+                            pa=0.0 )
+    ellipse = Ellipse(image, geometry)
+    isolist = ellipse.fit_image()
+    isophot_model_image = build_ellipse_model(image.shape, isolist)
+    
+    # make a small cutout
+    short_list = isolist.to_table()
+    intensity_max = short_list['intens'].max()
+    short_list = short_list[short_list['intens'] >= crop_intensity_frac * intensity_max]
+    sma_cutout = short_list['sma'].max() * sma_cutout_factor
+
+    x0 = np.median(short_list['x0'])
+    y0 = np.median(short_list['y0'])
+    isophot_cutout = Cutout2D(isophot_model_image,
+                              position=(x0,y0),
+                              size=(sma_cutout,sma_cutout)).data
+    
+    # update model
+    model_init_x_0 = model.x_0
+    model_init_y_0 = model.y_0
+    fitted_model, _ = pf.fit_model(
+        image=isophot_cutout,
+        model=model,
+        maxiter=10000,
+    )
+    fitted_model.x_0 = model_init_x_0
+    fitted_model.y_0 = model_init_y_0
+    return fitted_model
+
+
 
 def load_and_crop(datafile,filters,psffile=None,
                   base_filter='F150W',plot=True,custom_initial_crop=False,
@@ -51,7 +99,7 @@ def load_and_crop(datafile,filters,psffile=None,
     return galaxy
 
 
-def prep_model(cutoutdata,simple=False,fixed_params={}):
+def prep_model(cutoutdata,simple=False,fixed_params={},**kwargs):
     # prepare model
     galaxy_size = cutoutdata.galaxy_size
     shape = cutoutdata.data.shape
@@ -59,7 +107,7 @@ def prep_model(cutoutdata,simple=False,fixed_params={}):
         sersic = models.Sersic2D(amplitude=1, r_eff=galaxy_size, n=2,
                                 x_0=shape[1]/2, y_0=shape[0]/2,
                                 ellip=0.2, theta=np.pi/4)
-        model = SphotModel(sersic, cutoutdata)
+        model = SphotModel(sersic, cutoutdata,**kwargs)
     else:
         disk = models.Sersic2D(amplitude=0.1, r_eff=galaxy_size*5, n=2,
                             x_0=shape[1]/2, y_0=shape[0]/2,
@@ -67,7 +115,7 @@ def prep_model(cutoutdata,simple=False,fixed_params={}):
         bulge = models.Sersic2D(amplitude=0.5, r_eff=galaxy_size/5, n=2,
                                 x_0=shape[1]/2, y_0=shape[0]/2,
                                 ellip=0.2, theta=np.pi/4)
-        model = SphotModel(disk+bulge, cutoutdata) # some model constraints depend on the data
+        model = SphotModel(disk+bulge, cutoutdata,**kwargs) # some model constraints depend on the data
         model.set_conditions([('r_eff_0','r_eff_1')]) # enforce r_eff_0 >= r_eff_1
     model.set_fixed_params(fixed_params)
     return model

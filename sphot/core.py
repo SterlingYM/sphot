@@ -1,4 +1,4 @@
-from .utils import load_and_crop, prep_model
+from .utils import load_and_crop, prep_model, update_model_with_isophot_fit
 from .psf import PSFFitter
 from .fitting import ModelFitter, ModelScaleFitter
 from .plotting import plot_sphot_results
@@ -78,6 +78,8 @@ def run_basefit(galaxy,base_filter,
     # 2. make models & prepare fitters
     model_1 = prep_model(cutoutdata,simple=True)
     model_2 = prep_model(cutoutdata,simple=False) if fit_complex_model else model_1
+    model_1 = update_model_with_isophot_fit(model_1,cutoutdata,fit_to='data')
+    model_2 = update_model_with_isophot_fit(model_2,cutoutdata,fit_to='psf_sub_data') if fit_complex_model else model_1
     fitter_1 = ModelFitter(model_1,cutoutdata)
     fitter_2 = ModelFitter(model_2,cutoutdata) if fit_complex_model else fitter_1
     fitter_psf = PSFFitter(cutoutdata)

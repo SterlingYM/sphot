@@ -15,6 +15,7 @@ from scipy.stats import (norm,exponnorm,powerlognorm,
                          powernorm,truncexpon,skewnorm,
                          multivariate_normal)
 from scipy.optimize import minimize, dual_annealing, leastsq
+from scipy.ndimage import zoom
 
 import astropy.units as u
 from astropy.stats import sigma_clip
@@ -29,17 +30,28 @@ from photutils.aperture import (CircularAperture,EllipticalAperture,
 from .plotting import astroplot, plot_sersicfit_result
         
 class SphotModel(PSFConvolvedModel2D):
-    def __init__(self,model,cutoutdata):
+    def __init__(self,model,cutoutdata,resample_psf=True,**kwargs):
         ''' 
         A wrapper class for the petrofit model.
         Args:
             model (astropy FittableModel): model to fit.
             cutoutdata (CutoutData): the data to fit.
         '''
+        if resample_psf:
+            psf = cutoutdata.psf
+            psf_oversample = cutoutdata.psf_oversample
+            psf = zoom(psf,1/psf_oversample)
+            psf /= psf.sum() # normalize
+            psf_oversample = 1
+        else:
+            psf = cutoutdata.psf
+            psf_oversample = cutoutdata.psf_oversample
+
+        
         super().__init__(model,
-                        psf=cutoutdata.psf, 
-                        psf_oversample = int(cutoutdata.psf_oversample),
-                        oversample = int(cutoutdata.psf_oversample))
+                        psf=psf, 
+                        psf_oversample = int(psf_oversample),
+                        oversample = int(psf_oversample))
         self.data = cutoutdata.data
         self.free_params = self._param_names
         self.fixed_params = {}
