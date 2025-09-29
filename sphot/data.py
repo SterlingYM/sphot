@@ -29,6 +29,7 @@ from petrofit.modeling import PSFConvolvedModel2D, model_to_image
 
 from .plotting import astroplot, plot_sersicfit_result,plot_profile2d
 from .logging import logger
+from .aperture import IsoPhotApertures, fill_nans
 
 class DebugException(Exception):
     def __init__(self, message, debug_var):
@@ -370,6 +371,26 @@ class MultiBandCutout():
                 else:
                     f.create_dataset(g_key,data=str_to_json(g_val))
         logger.info(f'Saved to {filepath}')
+        
+    def fill_nans(self,isophot_base_filter,
+                    fit_isophot_to='data',
+                    isophot_frac_min=0.05,
+                    isophot_frac_max=0.95,
+                    apply_to = 'residual',
+                    fill_max_nan_frac=0.5,
+                    fill_replace_with='sersic_modelimg'):
+        ''' fill NaNs in all bands using isophotal apertures from a base filter.'''
+        
+        iso_apers = IsoPhotApertures(self.images[isophot_base_filter])
+        iso_apers.create_apertures(
+            fit_to=fit_isophot_to,
+            frac_enc=np.linspace(isophot_frac_min,isophot_frac_max,100))
+        fill_nans(
+            self,
+            iso_apers.apertures,
+            apply_to= apply_to,
+            max_nan_frac=fill_max_nan_frac,
+            replace_with=fill_replace_with)
         
 def read(filepath,**kwargs):
     ''' a convenient wrapper for loading h5 files.

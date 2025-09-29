@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sphot"
-version = "0.1"
+version = "0.2.0"
 description = "A Python package for photometry and astrophysics"
 dependencies = [
     "numpy>=1.26",

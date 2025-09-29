@@ -123,6 +123,7 @@ def load_and_crop(datafile,filters,psffile=None,
         cutoutdata.galaxy_size = galaxy_size
     for cutoutdata in galaxy.image_list:
         cutoutdata.data[cutoutdata.data == 0.] = np.nan
+        cutoutdata._rawdata[cutoutdata._rawdata == 0.] = np.nan
     return galaxy
 
 

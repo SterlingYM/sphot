@@ -15,11 +15,40 @@ fit_complex_model = false
 allow_refit = false
 
 [psf]
-mask_aper_size_in_r_eff = 2.5
-aperture_radius = 3
-fitter_maxiters = 300
-IterativePSFPhotometry_maxiters = 5
+# iterative fit settings
+th_min = 5
+th_max = 30
+th_iter = 10 # N_iteration between min and max
+mask_aper_size_in_r_eff = 3.5
+raise_error = false
+residual_clip_sigma = 15.0 # keep this high to avoid over-masking
+
+# finder/grouper/bkg parameters
+finder_kwargs = {roundhi=1.0, roundlo=-1.0, sharplo=0.20, sharphi=1.0}
 grouper_separation_in_psfsigma = 2
+bkg_sigma_clip = 3.0
+bkg_box_size = [10,10]
+bkg_filter_size = [5,5]
+localbkg_bounds_in_psfsigma = [2,5]
+
+# Photutils PSFPhotometry parameters
+PSFPhotometry_aperture_radius = 3
+PSFPhotometry_fitter_maxiters = 300
+PSFPhotometry_maxiters = 5
+PSFPhotometry_mode = 'new'
+PSFPhotometry_fit_shape = [3,3] # pixels. use small number for crowded fields
+PSFPhotometry_multiprocessing = false
+modelimg_render_shape = [25,25]
+PSFPhotometry_group_warning_threshold = 10
+
+# quality cuts
+cuts_pos_err_max = 2 # pixels in fitted coordinates
+cuts_res_cen_sigma_clip = 3.0 # -N*bkg_std < res_cen < max(N*std(res_cen), N*bkg_std)
+cuts_cfit_sigma_clip = 3.0 # N-sigma for cfit
+# cuts_qfit_median_factor = 2.0 # max_qfit/median(qfit)
+cuts_chi2dof_median_factor = 3.0 # max_chi2dof/median(chi2dof)
+cuts_pos_diff_median_factor = 2.0 # max_pos_diff/median(pos_diff)
+cuts_flux_SNR_min = 1.0 # min flux_SNR
 
 [aperture]
 petro = 0.5
