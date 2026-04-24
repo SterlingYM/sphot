@@ -13,12 +13,22 @@ iter_basefit = 10
 iter_scalefit = 3
 fit_complex_model = false
 allow_refit = false
+# Main-loop early-exit: stop iterating when sersic params (standardized [0,1]
+# parameter vector) move by less than mainloop_convergence_atol for
+# mainloop_convergence_patience consecutive iterations, but never before
+# mainloop_min_iter. Set patience very high to disable.
+mainloop_convergence_atol = 1e-3
+mainloop_convergence_patience = 2
+mainloop_min_iter = 2
 
 [psf]
 # iterative fit settings
 th_min = 5
 th_max = 30
 th_iter = 10 # N_iteration between min and max
+# Early-stop the threshold sweep after this many consecutive thresholds add
+# no new sources. Set very high to disable.
+th_max_consec_empty = 3
 mask_aper_size_in_r_eff = 3.5
 raise_error = false
 residual_clip_sigma = 15.0 # keep this high to avoid over-masking
@@ -35,8 +45,6 @@ localbkg_bounds_in_psfsigma = [2,5]
 # Photutils PSFPhotometry parameters
 PSFPhotometry_aperture_radius = 3
 PSFPhotometry_fitter_maxiters = 300
-PSFPhotometry_maxiters = 5
-PSFPhotometry_mode = 'new'
 PSFPhotometry_fit_shape = [3,3] # pixels. use small number for crowded fields
 modelimg_render_shape = [25,25]
 PSFPhotometry_group_warning_threshold = 10

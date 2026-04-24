@@ -3,17 +3,30 @@ from .psf import PSFFitter
 from .fitting import ModelFitter, ModelScaleFitter
 from .plotting import plot_sphot_results
 from .aperture import aperture_routine
+from .config import config
 
 import glob
 import sys
 import warnings
-from rich.progress import (Progress, TimeElapsedColumn, 
+import numpy as np
+from rich.progress import (Progress, TimeElapsedColumn,
                            TimeRemainingColumn, BarColumn, TextColumn)
 from rich import get_console
 import logging
 import matplotlib.pyplot as plt
 
 from .logging import logger
+
+
+def _params_converged(prev, curr, atol):
+    ''' True when standardized sersic params are within atol of the previous iteration '''
+    if prev is None or curr is None:
+        return False
+    prev = np.asarray(prev)
+    curr = np.asarray(curr)
+    if prev.shape != curr.shape:
+        return False
+    return np.allclose(prev, curr, atol=atol, rtol=0)
 
 def ignorewarnings(func):
     def wrapper(*args,**kwargs):
@@ -100,15 +113,33 @@ def run_basefit(galaxy,base_filter,
         fitter_psf.fit(**kwargs_psf)
         cutoutdata.remove_sky(**kwargs_rmsky_psf)
     progress.update(progress_main, advance=1, refresh=True)
-    
-    # repeat fitting (main loop)
-    for _ in range(N_mainloop_iter):
+
+    # repeat fitting (main loop) -- early-exit when Sersic params stop moving
+    conv_atol = config['core'].get('mainloop_convergence_atol', 1e-3)
+    conv_patience = config['core'].get('mainloop_convergence_patience', 2)
+    min_iter = config['core'].get('mainloop_min_iter', 2)
+    prev_params = np.array(cutoutdata.sersic_params, copy=True)
+    consec_converged = 0
+    for i in range(N_mainloop_iter):
         fitter_2.fit(**kwargs_sersic_iter)
         cutoutdata.remove_sky(**kwargs_rmsky_sersic)
         fitter_psf.fit(**kwargs_psf)
         cutoutdata.remove_sky(**kwargs_rmsky_psf)
         progress.update(progress_main, advance=1, refresh=True)
-        
+
+        curr_params = np.array(cutoutdata.sersic_params, copy=True)
+        if _params_converged(prev_params, curr_params, conv_atol):
+            consec_converged += 1
+        else:
+            consec_converged = 0
+        prev_params = curr_params
+        if (i + 1) >= min_iter and consec_converged >= conv_patience:
+            logger.info(f'Sersic params converged after {i+1} main-loop '
+                        f'iterations; stopping early.')
+            progress.update(progress_main,
+                            completed=N_mainloop_iter+1, refresh=True)
+            break
+
     # final sky subtraction
     logger.info(f'*** Base model fit completed ***')
       
@@ -167,8 +198,13 @@ def run_scalefit(galaxy,filtername,base_params,allow_refit,
         cutoutdata.remove_sky(**kwargs_rmsky_psf)
     progress.update(progress_main, advance=1, refresh=True)
 
-    # -- repeat fitting
-    for _ in range(N_mainloop_iter):
+    # -- repeat fitting (early-exit when Sersic params stop moving)
+    conv_atol = config['core'].get('mainloop_convergence_atol', 1e-3)
+    conv_patience = config['core'].get('mainloop_convergence_patience', 2)
+    min_iter = config['core'].get('mainloop_min_iter', 2)
+    prev_params = np.array(cutoutdata.sersic_params, copy=True)
+    consec_converged = 0
+    for i in range(N_mainloop_iter):
         if allow_refit:
             fitter_2.fit(**kwargs_sersic_refit_iter)
         else:
@@ -177,7 +213,20 @@ def run_scalefit(galaxy,filtername,base_params,allow_refit,
         fitter_psf.fit(**kwargs_psf)
         cutoutdata.remove_sky(**kwargs_rmsky_psf)
         progress.update(progress_main, advance=1, refresh=True)
-        
+
+        curr_params = np.array(cutoutdata.sersic_params, copy=True)
+        if _params_converged(prev_params, curr_params, conv_atol):
+            consec_converged += 1
+        else:
+            consec_converged = 0
+        prev_params = curr_params
+        if (i + 1) >= min_iter and consec_converged >= conv_patience:
+            logger.info(f'{filtername}: params converged after {i+1} '
+                        f'iterations; stopping early.')
+            progress.update(progress_main,
+                            completed=N_mainloop_iter+1, refresh=True)
+            break
+
     # final sky subtraction
     logger.info(f'*** {filtername} done ***')
 

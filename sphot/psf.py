@@ -1,26 +1,21 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from .plotting import astroplot
-from tqdm.auto import tqdm
 import warnings
-from astropy.utils.exceptions import AstropyUserWarning
 import traceback
 
-from scipy.ndimage import gaussian_filter
-from astropy.nddata import overlap_slices
+from astropy.utils.exceptions import AstropyUserWarning
 from astropy.table import QTable, vstack
-from astropy.stats import sigma_clip, SigmaClip, sigma_clipped_stats
+from astropy.stats import SigmaClip, sigma_clipped_stats
 
-from photutils.aperture import CircularAperture, EllipticalAperture
-from photutils.psf import (SourceGrouper, IterativePSFPhotometry, 
-                           PSFPhotometry, ImagePSF)#FittableImageModel)
+from photutils.aperture import EllipticalAperture
+from photutils.psf import SourceGrouper, PSFPhotometry, ImagePSF
 from photutils.detection import DAOStarFinder
 from photutils.background import (MMMBackground, MADStdBackgroundRMS,
                                   LocalBackground, MedianBackground,
                                   Background2D)
 from photutils.datasets.images import make_model_image as _make_model_image
 
-from .data import get_data_annulus
+from .plotting import astroplot
 from .logging import logger
 from .config import config
 
@@ -146,64 +141,6 @@ class PSFFitter():
         self.cutoutdata.psf_table = psf_table
         return self.cutoutdata
 
-def make_modelimg(psffitter,shape,psf_shape):
-    ''' modified version of photutil's function.
-    No background is added.
-    
-    Args:
-        fit_models: list of PSF models
-    Returns:
-        model_img: rendered model image    
-    '''
-    
-    if isinstance(psffitter, PSFPhotometry):
-        psf_model = psffitter.psf_model
-        fit_params = psffitter._fit_model_params
-        local_bkgs = psffitter.init_params['local_bkg']
-    else:
-        psf_model = psffitter._psfphot.psf_model
-        if psffitter.mode == 'new':
-            # collect the fit params and local backgrounds from each
-            # iteration
-            local_bkgs = []
-            for i, psfphot in enumerate(psffitter.fit_results):
-                if i == 0:
-                    fit_params = psfphot._fit_model_params
-                else:
-                    fit_params = vstack((fit_params,
-                                            psfphot._fit_model_params))
-                local_bkgs.append(psfphot.init_params['local_bkg'])
-
-            local_bkgs = _flatten(local_bkgs)
-        else:
-            # use the fit params and local backgrounds only from the
-            # final iteration, which includes all sources
-            fit_params = self.fit_results[-1]._fit_model_params
-            local_bkgs = self.fit_results[-1].init_params['local_bkg']
-
-        model_params = fit_params
-
-        if include_localbkg:
-            # add local_bkg
-            model_params = model_params.copy()
-            model_params['local_bkg'] = local_bkgs
-
-        try:
-            x_name = psf_model.x_name
-            y_name = psf_model.y_name
-        except AttributeError:
-            x_name = 'x_0'
-            y_name = 'y_0'
-
-        return _make_model_image(shape, psf_model, model_params,
-                                 model_shape=psf_shape,
-                                 x_name=x_name, y_name=y_name,
-                                 progress_bar=progress_bar)
-    return model_img
-
-
-# def filter_psfphot_results(phot_result):
-    
 def filter_psfphot_results(phot_result,
                            center_mask_params=None,
                            full_output=False,
@@ -289,68 +226,6 @@ def filter_psfphot_results(phot_result,
         return s, s_dict, msg
     return s, msg
 
-def _update_filter_criteria(phot_result,min_sources=50,target_passing_fraction=0.5,
-                            maxiter=10,cfit_increment=0.05,qfit_increment=0.05,
-                            **kwargs):
-    ''' update filter criteria for PSF photometry.
-    Determines the filtering criteria should be loosened based on:
-        - the number of sources detected
-        - the number of sources that passed the filter
-        
-    Args:
-        min_sources (int): the minimum number of detected sources required for evaluation. No changes will be made is the number of sources detected is smaller than this.
-        
-    Returns:
-        kwargs (dict): the updated kwargs.
-    '''
-    verbose = kwargs.get('verbose',False)
-    N_src = len(phot_result)
-    
-    # check if we have enough number of sources
-    if N_src < min_sources:
-        return kwargs
-    
-    # set initial values if needed
-    if not hasattr(kwargs,'cfit_abs_max'):
-        kwargs['cfit_abs_max'] = 0.01
-    if not hasattr(kwargs,'qfit_max'):
-        kwargs['qfit_max'] = 0.05
-        
-    # loop to find the right criteria
-    s,s_dict,msg = filter_psfphot_results(phot_result,full_output=True,**kwargs)
-    
-    # initialize stopping criteria
-    s_prev = s.sum()
-    s_prev_prev = s_prev
-    init_run =True
-    for _ in range(maxiter):
-        if s.sum()/N_src > target_passing_fraction:
-            break
-        if verbose:
-            logger.info(f'too many sources are cut ({s.sum()} out of {N_src}). Updating the filter criteria.')
-        # determine which criteria to loosen
-        cfit_pass_frac = s_dict['s_cfit'].sum()/N_src
-        qfit_pass_frac = s_dict['s_qfit'].sum()/N_src
-        if cfit_pass_frac < qfit_pass_frac:
-            kwargs['cfit_abs_max'] = np.round(kwargs['cfit_abs_max'] + cfit_increment,5)
-            if verbose:
-                logger.info(f'cfit_abs_max updated to {kwargs["cfit_abs_max"]}')
-        else:
-            kwargs['qfit_max'] = np.round(kwargs['qfit_max'] + qfit_increment,5)
-            if verbose:
-                logger.info(f'qfit_max updated to {kwargs["qfit_max"]}')
-                
-        # run filtering and see if there is any improvement
-        s,s_dict,msg = filter_psfphot_results(phot_result,full_output=True,**kwargs)
-        if s.sum() <= s_prev and s_prev_prev == s_prev and not init_run:
-            if verbose:
-                logger.info(f'no improvement in the number of sources passed the cut. Stopping the loop.')
-            break
-        s_prev_prev = s_prev
-        s_prev = s.sum()
-        init_run = False
-    return kwargs
-
 def sigma_clip_outside_aperture(data,sersic_params_physical,clip_sigma=4,
                                 aper_size_in_r_eff=1):
     
@@ -402,37 +277,20 @@ def subtract_background(data):
     return data_bksub,bkg_std,data_error
 
 def _prepare_psf_fitters(th,psf_model,bkg_std,psf_sigma):
-
     finder_kwargs = config['psf']['finder_kwargs']
     daofinder = DAOStarFinder(
-        threshold=th*bkg_std, 
+        threshold=th*bkg_std,
         fwhm=psf_sigma*2.33, **finder_kwargs)
-    
+
     localbkg_estimator = LocalBackground(
-        config['psf']['localbkg_bounds_in_psfsigma'][0]*psf_sigma, 
-        config['psf']['localbkg_bounds_in_psfsigma'][1]*psf_sigma, 
+        config['psf']['localbkg_bounds_in_psfsigma'][0]*psf_sigma,
+        config['psf']['localbkg_bounds_in_psfsigma'][1]*psf_sigma,
         MMMBackground()
         )
     grouper = SourceGrouper(
         min_separation=config['psf']['grouper_separation_in_psfsigma'] * psf_sigma
-        ) 
+        )
 
-    #### run photmetry
-    # psf_iter = IterativePSFPhotometry(
-    #     psf_model, 
-    #     finder             = daofinder,
-    #     grouper            = grouper,
-    #     localbkg_estimator = localbkg_estimator,
-    #     fit_shape       = config['psf']['PSFPhotometry_fit_shape'],
-    #     mode            = config['psf']['PSFPhotometry_mode'],
-    #     aperture_radius = config['psf']['PSFPhotometry_aperture_radius'],
-    #     maxiters        = config['psf']['PSFPhotometry_maxiters'],
-    #     fitter_maxiters = config['psf']['PSFPhotometry_fitter_maxiters'],
-    #     group_warning_threshold = config['psf']['PSFPhotometry_group_warning_threshold'],
-    #     multiprocessing = config['psf']['PSFPhotometry_multiprocessing'],
-    #     )
-    psf_iter = None # TODO remove this
-    
     psf_single = PSFPhotometry(
         psf_model,
         fit_shape          = config['psf']['PSFPhotometry_fit_shape'],
@@ -443,7 +301,7 @@ def _prepare_psf_fitters(th,psf_model,bkg_std,psf_sigma):
         fitter_maxiters    = config['psf']['PSFPhotometry_fitter_maxiters'],
         group_warning_threshold = config['psf']['PSFPhotometry_group_warning_threshold'],
     )
-    return psf_iter, psf_single
+    return psf_single
 
 def do_psf_photometry(data,data_error,bkg_std,
                       psf_model,psf_sigma,
@@ -477,12 +335,9 @@ def do_psf_photometry(data,data_error,bkg_std,
     Returns:
         phot_result (QTable): the photometry result.
         resid (2d array): the residual image.
-    """    
-    verbose = kwargs.get('verbose',False)
-    # tools
-
+    """
     # initialize fitters
-    psf_iter, psf_single = _prepare_psf_fitters(th, psf_model, bkg_std, psf_sigma)
+    psf_single = _prepare_psf_fitters(th, psf_model, bkg_std, psf_sigma)
 
     with warnings.catch_warnings():
         # abort if there are too many sources in a group
@@ -569,36 +424,55 @@ def iterative_psf_fitting(data,psf_model,psf_sigma,
     resid = data_bksub.copy()
     phot_result = None
     last_successful_th = None
+    # Early-stop control: stop after this many consecutive thresholds add no
+    # new sources. The threshold list goes high->low, so once a couple of
+    # noise-floor passes return nothing, lower thresholds will only add noise.
+    max_consec_empty = config['psf'].get('th_max_consec_empty', 3)
+    consec_empty = 0
 
     # loop -- repeat PSF subtraction
     if progress is not None:
         progress_psf = progress.add_task(progress_text,
                                         total=len(threshold_list))
     for th in threshold_list:
+        added_sources = False
         try:
-            psf_results = do_psf_photometry(resid, data_error, bkg_std, 
+            psf_results = do_psf_photometry(resid, data_error, bkg_std,
                                             psf_model, psf_sigma,
                                             th=th,**kwargs)
             if progress is not None:
                 progress.update(progress_psf, advance=1, refresh=True)
             if psf_results[0] is None:
-                continue
+                pass  # no detection -> empty pass
             else:
                 _phot_result, _resid = psf_results
-                if np.all(~np.isfinite(_resid)):
-                    continue
-                # append the results
-                resid = _resid
-                if phot_result is None:
-                    phot_result = _phot_result
-                else:
-                    phot_result = vstack([phot_result, _phot_result])
-                last_successful_th = th
+                if not np.all(~np.isfinite(_resid)) and len(_phot_result) > 0:
+                    # append the results
+                    resid = _resid
+                    if phot_result is None:
+                        phot_result = _phot_result
+                    else:
+                        phot_result = vstack([phot_result, _phot_result])
+                    last_successful_th = th
+                    added_sources = True
         except Exception as e:
             if config['psf']['raise_error']:
-                raise 
+                raise
             logger.error(f'Skipping PSF fitting with th={th:.2f}. {str(e)}')
-            continue
+
+        if added_sources:
+            consec_empty = 0
+        else:
+            consec_empty += 1
+            if (last_successful_th is not None
+                    and consec_empty >= max_consec_empty):
+                logger.debug(f'No new sources for {consec_empty} thresholds; '
+                             f'stopping ladder early at th={th:.2f}.')
+                if progress is not None:
+                    # clear remaining ticks so the bar finishes cleanly
+                    progress.update(progress_psf, completed=len(threshold_list),
+                                    refresh=True)
+                break
     if progress is not None:
         progress.remove_task(progress_psf)
 
