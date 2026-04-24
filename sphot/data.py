@@ -94,6 +94,7 @@ class CutoutData():
         self.psf_blurring = psf_blurring
         self.fix_psf()
         self.calc_psf_sigma()
+        return self.psf,self.psf_sigma
     
     def determine_psf_blurring(self):
         ''' determine the best PSF blurring value based on the number of stars detected '''
@@ -122,8 +123,8 @@ class CutoutData():
                                         self.psf_oversample)
             daofinder = DAOStarFinder(threshold=bkg_std*2,
                                       fwhm=psf_sigma*2.33,
-                                      roundhi=1.0, roundlo=-1.0,
-                                      sharplo=0.20, sharphi=1.0)
+                                      roundness_range=(-1.0, 1.0),
+                                      sharpness_range=(0.20, 1.0))
             star_cat = daofinder.find_stars(data_bksub)
             psf_sigma_vals.append(psf_sigma)
             N_stars_found.append(len(star_cat))
@@ -369,7 +370,11 @@ class MultiBandCutout():
                             logger.error(f'Error with {key}: {e}')
                             continue
                 else:
-                    f.create_dataset(g_key,data=str_to_json(g_val))
+                    try:
+                        f.create_dataset(g_key,data=str_to_json(g_val))
+                    except Exception as e:
+                        logger.error(f'Error with {g_key}: {e}')
+                        continue
         logger.info(f'Saved to {filepath}')
         
     def fill_nans(self,isophot_base_filter,
@@ -469,13 +474,17 @@ def _calc_psf_sigma(data,psf_oversample):
     return psf_sigma
 
 def str_to_json(s):
-    ''' encode string to json-readable format. 
+    ''' encode string to json-readable format.
     This is a helper function for saving h5 files.'''
     if isinstance(s,str):
         return json.dumps(s).encode('utf-8')
     elif isinstance(s,list):
-        if isinstance(s[0],str):
+        if len(s) > 0 and isinstance(s[0],str):
             return json.dumps(s).encode('utf-8')
+        return s
+    elif isinstance(s, u.Quantity):
+        # photutils v3 returns angles as Quantity; store the bare value
+        return np.asarray(s.value)
     else:
         return s
 

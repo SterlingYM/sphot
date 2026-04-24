@@ -4,6 +4,7 @@ from .plotting import astroplot
 from tqdm.auto import tqdm
 import warnings
 from astropy.utils.exceptions import AstropyUserWarning
+import traceback
 
 from scipy.ndimage import gaussian_filter
 from astropy.nddata import overlap_slices
@@ -23,6 +24,12 @@ from .data import get_data_annulus
 from .logging import logger
 from .config import config
 
+def get_full_traceback(e):
+    ''' Get the full traceback of an exception as a string. '''
+    tb_lines = traceback.format_exception(type(e), e, e.__traceback__)
+    tb_text = ''.join(tb_lines)
+    return tb_text
+
 class PSFFitter():
     ''' A class to perform PSF fitting. '''
     def __init__(self,cutoutdata):
@@ -30,12 +37,34 @@ class PSFFitter():
         self.psf_sigma = cutoutdata.psf_sigma
         
             # PSF image to model
-        self.psf_model = ImagePSF(
-            cutoutdata.psf, flux=1.0,
+        self.psf_model = self.psf_img2model(cutoutdata.psf,cutoutdata.psf_oversample)
+        
+    def psf_img2model(self,psfimg,psf_oversample):
+        psf_model = ImagePSF(
+            psfimg, flux=1.0,
             x_0=0, y_0=0, 
-            oversampling=cutoutdata.psf_oversample, 
+            oversampling=psf_oversample, 
             fill_value=0.0
-            )   
+            )
+        return psf_model
+    
+    def update_psf_blur(self,psf_blur):
+        ''' Update the PSF model by convolving the PSF image with a Gaussian kernel.
+        
+        Args:
+            psf_blur (float): the sigma of the Gaussian kernel in pixel units.
+        '''
+        if psf_blur:
+            logger.debug(f'Convolving (blurring) PSF with sigma={psf_blur} pix')
+            psf_blurred, psf_sigma = self.cutoutdata.blur_psf(psf_blur)
+            self.psf_model = self.psf_img2model(psf_blurred,self.cutoutdata.psf_oversample)
+            self.psf_sigma = psf_sigma
+        else:
+            logger.debug(f'Using original PSF without blurring')
+            self.psf_model = self.psf_img2model(self.cutoutdata.psf,self.cutoutdata.psf_oversample)
+            self.psf_sigma = self.cutoutdata.psf_sigma
+            
+        return self.psf_model,self.psf_sigma
         
     def fit(self,fit_to='sersic_residual',**kwargs):
         ''' Perform PSF fitting. 
@@ -58,10 +87,11 @@ class PSFFitter():
         blur_psf_dict = config['prep'].get('blur_psf',False)
         blur_psf = blur_psf_dict.get(self.cutoutdata.filtername,False) if isinstance(blur_psf_dict,dict) else blur_psf_dict
         if blur_psf:
-            logger.info(f'Convolving (blurring) PSF with sigma={blur_psf} pix')
-            self.cutoutdata.blur_psf(blur_psf)
+            self.update_psf_blur(blur_psf)
+            blur_psf_values = np.array(config['psf']['psf_blur_factors']) * blur_psf
         else:
-            logger.info(f'Using original PSF without blurring')
+            logger.debug(f'Using original PSF without blurring')
+            blur_psf_values = None
             
         x0 = self.cutoutdata.sersic_params_physical['x_0']
         y0 = self.cutoutdata.sersic_params_physical['y_0']
@@ -82,6 +112,8 @@ class PSFFitter():
                 self.psf_sigma,
                 threshold_list = threshold_list,
                 center_mask_params=center_mask_params,
+                psf_blur_values = blur_psf_values,
+                psf_blur_func = self.update_psf_blur,
                 **kwargs)
             
         psf_model_total = self.data - resid
@@ -192,7 +224,7 @@ def filter_psfphot_results(phot_result,
     qfit = phot_result['qfit']
     x_diff = phot_result['x_fit'] - phot_result['x_init']
     y_diff = phot_result['y_fit'] - phot_result['y_init']
-    npixfit = phot_result['npixfit']
+    npixfit = phot_result['n_pixels_fit']
     xerr = phot_result['x_err']
     yerr = phot_result['y_err']
 
@@ -402,15 +434,14 @@ def _prepare_psf_fitters(th,psf_model,bkg_std,psf_sigma):
     psf_iter = None # TODO remove this
     
     psf_single = PSFPhotometry(
-        psf_model, 
+        psf_model,
+        fit_shape          = config['psf']['PSFPhotometry_fit_shape'],
         finder             = daofinder,
         grouper            = grouper,
-        localbkg_estimator = localbkg_estimator,
-        fit_shape       = config['psf']['PSFPhotometry_fit_shape'],
-        aperture_radius = config['psf']['PSFPhotometry_aperture_radius'],
-        fitter_maxiters = config['psf']['PSFPhotometry_fitter_maxiters'],
+        local_bkg_estimator= localbkg_estimator,
+        aperture_radius    = config['psf']['PSFPhotometry_aperture_radius'],
+        fitter_maxiters    = config['psf']['PSFPhotometry_fitter_maxiters'],
         group_warning_threshold = config['psf']['PSFPhotometry_group_warning_threshold'],
-        multiprocessing = config['psf']['PSFPhotometry_multiprocessing'],
     )
     return psf_iter, psf_single
 
@@ -464,8 +495,9 @@ def do_psf_photometry(data,data_error,bkg_std,
             # fit all simultaneously
             phot_result = psf_single(data, error=data_error) # init_params=init_params)
         except AstropyUserWarning as e:
-            logger.error(f'Too many blended sources. Aborting th={th}...')
-            raise
+            # logger.error(f'Too many blended sources. Aborting th={th}...')
+            N_blend = config['psf']['PSFPhotometry_group_warning_threshold']
+            raise Exception(f'too many (>{N_blend}) blended sources.')
         except Exception as e:
             logger.info(f'IterativePSFPhotometry failed due to: {str(e)}')
             raise 
@@ -503,9 +535,26 @@ def iterative_psf_fitting(data,psf_model,psf_sigma,
                           threshold_list,
                           progress=None,
                           progress_text='Running iPSF...',
+                          psf_blur_values = None,
+                          psf_blur_func = None,
                           **kwargs):
     ''' Iteratively run do_psf_photometry() with different threshold levels.
-    This function is useful for crowded fields, where a single threshold level may fail. '''
+    This function is useful for crowded fields, where a single threshold level may fail. 
+    
+    Inputs:
+        data (2d array): the data to perform PSF photometry.
+        psfimg (2d array): the PSF image.
+        psf_sigma (float): the HWHM of the PSF. Use FWHM/2
+        psf_oversample (int): the oversampling factor of the PSF.
+        threshold_list (1d array): the list of threshold levels to try, in background STD.
+        center_mask_params (list, optional): [x_center,y_center,mask_r]. If provided, sources within the radius mask_r from (x_center,y_center) will be excluded from the final results. This is useful when the central source is very bright and causes many spurious detections nearby.
+        psf_blur_fpsf_blur_valuesactors (list, optional): the list of Gaussian sigma values to convolve the PSF with, in pixel units. If provided, the PSF will be convolved with the Gaussian kernel at the end of the iterative fitting to check if any additional sources can be found/fitted with dfferent PSF widths. If not provided, this additional check will not be performed.
+        psf_blur_func (function, optional): the function to convolve the PSF with a Gaussian kernel. The function should take a single argument (the sigma value) and output the convolved PSF. If not provided, this additional check will not be performed.
+        kwargs (dict): additional kwargs to pass to do_psf_photometry.
+    Returns:    
+        phot_result (QTable): the combined photometry result from all iterations.
+        resid_all (2d array): the final residual image.
+    '''
       
     # prepare background-subtracted data
     # take data stats & prepare background-subtracted data
@@ -519,10 +568,11 @@ def iterative_psf_fitting(data,psf_model,psf_sigma,
     # initialize variables
     resid = data_bksub.copy()
     phot_result = None
+    last_successful_th = None
 
     # loop -- repeat PSF subtraction
     if progress is not None:
-        progress_psf = progress.add_task(progress_text, 
+        progress_psf = progress.add_task(progress_text,
                                         total=len(threshold_list))
     for th in threshold_list:
         try:
@@ -543,6 +593,7 @@ def iterative_psf_fitting(data,psf_model,psf_sigma,
                     phot_result = _phot_result
                 else:
                     phot_result = vstack([phot_result, _phot_result])
+                last_successful_th = th
         except Exception as e:
             if config['psf']['raise_error']:
                 raise 
@@ -550,6 +601,45 @@ def iterative_psf_fitting(data,psf_model,psf_sigma,
             continue
     if progress is not None:
         progress.remove_task(progress_psf)
+
+    # optional override: use a fixed threshold for the PSF-blur sweep
+    psf_blur_th_override = config['psf'].get('psf_blur_th', None)
+    if psf_blur_th_override is not None:
+        last_successful_th = psf_blur_th_override
+
+    # additional loop -- repeat PSF subtraction with different PSF widths
+    if (psf_blur_values is not None) and (psf_blur_func is not None) and (last_successful_th is not None):
+        if progress is not None:
+            progress_psf = progress.add_task(f'Fitting at th={last_successful_th:.2f} with sharper and blurrier PSF...', 
+                                            total=len(psf_blur_values))
+        for psf_blur in psf_blur_values:
+            try:
+                psf_model,psf_sigma = psf_blur_func(psf_blur)
+                psf_results = do_psf_photometry(resid, data_error, bkg_std, 
+                                                psf_model, psf_sigma,
+                                                th=last_successful_th,**kwargs)
+                if progress is not None:
+                    progress.update(progress_psf, advance=1, refresh=True)
+                if psf_results[0] is None:
+                    continue
+                else:
+                    _phot_result, _resid = psf_results
+                    if np.all(~np.isfinite(_resid)):
+                        continue
+                    # append the results
+                    resid = _resid
+                    if phot_result is None:
+                        phot_result = _phot_result
+                    else:
+                        phot_result = vstack([phot_result, _phot_result])
+            except Exception as e:
+                if config['psf']['raise_error']:
+                    raise 
+                logger.error(f'Skipping PSF fitting with th={th:.2f}, blur={psf_blur}. {str(e)}')
+                continue
+
+        if progress is not None:
+            progress.remove_task(progress_psf)
         
     # make the residual image without background subtraction
     psf_modelimg_all = data_bksub - resid
