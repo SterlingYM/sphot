@@ -6,7 +6,7 @@ from scipy.interpolate import interp1d
 from astropy.convolution import convolve
 from astropy.nddata import block_reduce, Cutout2D
 from astropy import units as u
-from photutils.psf.matching import TopHatWindow, create_matching_kernel
+from photutils.psf_matching import TopHatWindow, make_kernel
 from photutils.aperture import EllipticalAperture, aperture_photometry
 
 from copy import deepcopy
@@ -64,7 +64,10 @@ def aperture_routine(galaxy,petro=0.5,center_mask=3.5,plot=True,
         aper_sci = iso_apers.get_aper_at(petro=petro)
         # frac_enclosed = iso_apers.frac_enclosed_at_aper_sci
         if plot:
-            iso_apers.plot()
+            try:
+                iso_apers.plot()
+            except Exception as e:
+                logger.warning(f'Failed to plot isophotal apertures: {e}')
     else:
         logger.info('Using custom aperture...')
         aper_sci = custom_aperture
@@ -82,7 +85,10 @@ def aperture_routine(galaxy,petro=0.5,center_mask=3.5,plot=True,
         aperphot.measure_frac(measure_on=measure_on + '_filled')
         aperphot.calc_mag()
         if plot:
-            aperphot.plot()
+            try:
+                aperphot.plot()
+            except Exception as e:
+                logger.warning(f'Failed to plot aperture photometry: {e}')
         cutoutdata.aper_petro = petro
         cutoutdata.mag_raw = aperphot.magAB
         cutoutdata.mag_raw_err = aperphot.magAB_err
@@ -126,7 +132,10 @@ def aperture_routine(galaxy,petro=0.5,center_mask=3.5,plot=True,
                             mode='grid')
         aperphot.calc_mag()
         if plot:
-            aperphot.plot()
+            try:
+                aperphot.plot(title=f'PSF corr: {PSF_corr_base_filter} -> {filt}:\ndmag={aperphot.magAB - _cutoutdata.mag_raw:.2f} mag')
+            except Exception as e:
+                logger.warning(f'Failed to plot PSF correction photometry: {e}')
         cutoutdata.dmag_PSFcorr = aperphot.magAB - _cutoutdata.mag_raw
         cutoutdata.dmag_PSFcorr_err = np.sqrt(aperphot.magAB_err**2 + _cutoutdata.mag_raw_err**2)
     
@@ -165,7 +174,7 @@ def prepare_blurring_kernel(galaxy,filt,blur_to,
     psf_base_cropped_ds = block_reduce(psf_base_cropped,os)
 
     # Calculate the blurring kernel
-    psf_matching_kernel = create_matching_kernel(psf_cropped_ds, psf_base_cropped_ds, window=window)
+    psf_matching_kernel = make_kernel(psf_cropped_ds, psf_base_cropped_ds, window=window)
 
     return psf_matching_kernel, psf_cropped_ds, psf_base_cropped_ds
 
@@ -218,7 +227,7 @@ def fill_nans(galaxy,apertures,
                     mask_img = mask_outer & (~mask_inner)
                     median_val = np.nanmedian(data[mask_img])
                     s = mask_img & (~np.isfinite(data))
-                    if s.sum() <= max_nan_frac * mask_img.sum():
+                    if s.sum() <= max_nan_frac * mask_img.sum() or (replace_with=='median'):
                         data_filled[s] = median_val
                     else:
                         data_filled[s] = getattr(cutoutdata,replace_with)[s].copy()
@@ -520,7 +529,7 @@ class CutoutDataPhotometry():
         else:
             self.magAB_err = np.nan
             
-    def plot(self):
+    def plot(self,title=None):
         fig,(ax1,ax2) = plt.subplots(1,2,figsize=(8,4))
         plt.subplots_adjust(wspace=0.01)
         norm,offset = astroplot(self.data_flux,ax=ax1)
@@ -531,6 +540,8 @@ class CutoutDataPhotometry():
         ax1.text(0.05,0.95,f'{self.cutoutdata.filtername}: {self.magAB:.2f} +/- {self.magAB_err:.2f} mag',
                  transform=ax1.transAxes,fontsize=10,bbox=dict(facecolor='white',alpha=0.3,edgecolor='none'),
                  va='top',ha='left')
+        if title:
+            ax1.set_title(title,fontsize=13)
             
     def __repr__(self):
         return f'{self.cutoutdata.filtername}: {self.magAB:.2f} +/- {self.magAB_err:.2f} mag'

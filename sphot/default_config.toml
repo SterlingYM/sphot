@@ -22,9 +22,10 @@ th_iter = 10 # N_iteration between min and max
 mask_aper_size_in_r_eff = 3.5
 raise_error = false
 residual_clip_sigma = 15.0 # keep this high to avoid over-masking
+psf_blur_factors = [0.8,1.2] # try changing the PSF width by these factors times psf_blur values
 
 # finder/grouper/bkg parameters
-finder_kwargs = {roundhi=1.0, roundlo=-1.0, sharplo=0.20, sharphi=1.0}
+finder_kwargs = {roundness_range=[-1.0, 1.0], sharpness_range=[0.20, 1.0]}
 grouper_separation_in_psfsigma = 2
 bkg_sigma_clip = 3.0
 bkg_box_size = [10,10]
@@ -37,7 +38,6 @@ PSFPhotometry_fitter_maxiters = 300
 PSFPhotometry_maxiters = 5
 PSFPhotometry_mode = 'new'
 PSFPhotometry_fit_shape = [3,3] # pixels. use small number for crowded fields
-PSFPhotometry_multiprocessing = false
 modelimg_render_shape = [25,25]
 PSFPhotometry_group_warning_threshold = 10
 
@@ -62,5 +62,5 @@ measure_on = 'psf_sub_data'
 error_on = 'psf_sub_data_error'
 measure_sky_on='residual_masked'
 fill_max_nan_frac=0.7
-fill_replace_with='sersic_modelimg'
+fill_replace_with='median'#'sersic_modelimg'
 PSF_corr_base_filter='F090W'
