@@ -38,6 +38,12 @@ class PSFFitter():
         # externally changed.
         self._blur_stable_count = 0
 
+        # Adaptive calibration step (in pixels). Lazily initialised on first
+        # calibration call from config['psf']['psf_blur_initial_delta'].
+        # Grows when the minimum lands at an edge of the bracket (we were
+        # too narrow); shrinks when we converge to the interior.
+        self._blur_delta = None
+
             # PSF image to model
         self.psf_model = self.psf_img2model(cutoutdata.psf,cutoutdata.psf_oversample)
         
@@ -84,96 +90,188 @@ class PSFFitter():
             return blur_psf_dict.get(self.cutoutdata.filtername, False)
         return blur_psf_dict
 
-    def _calibrate_blur(self, current_blur):
-        ''' Pick the best PSF blur for this iteration.
+    def _posterior_calibrate_blur(self, current_blur, phot_result):
+        ''' Posterior blur calibration with adaptive additive step and
+        parabolic interpolation.
 
-        Runs a single PSFPhotometry pass at a calibration threshold for each
-        candidate = factor * current_blur, with factors from
-        config['psf']['psf_blur_factors']. Scores by the number of sources
-        that survive the quality cuts in filter_psfphot_results: a wrong
-        blur both under-detects real sources and flunks the cfit check for
-        the detections it does find.
+        Evaluates the (cfit+qfit) metric at a 3-point bracket
+        [current - Δ, current, current + Δ], where Δ is an adaptive step
+        tracked across fit() calls. The winner drives the blur for the
+        NEXT iteration's ladder.
 
-        Returns the candidate with the highest score. If multiple candidates
-        tie on integer count, preference is given to the one closest to
-        `current_blur` (prevents wandering when scores are flat).
-        '''
-        factors = np.asarray(config['psf']['psf_blur_factors'], dtype=float)
-        candidates = factors * current_blur
+        Winner selection:
+          * If the grid minimum is a significant improvement over the
+            current score (> improvement_tol), try parabolic interpolation
+            through the 3 grid points and take the vertex; else use the
+            grid minimum. If the parabola is not convex or the vertex
+            lands outside the bracket, fall back to the grid minimum.
+          * If the grid improvement is below the tolerance, stay at
+            current (prevents noise-driven oscillation).
 
-        th_min = config['psf'].get('th_min', 1.5)
-        th_max = config['psf'].get('th_max', 4.0)
-        calib_th = float(np.sqrt(th_min * th_max))
-
-        try:
-            data_bksub, bkg_std, data_error = subtract_background(self.data)
-        except Exception as e:
-            logger.warning(f'blur calibration: background stats failed '
-                           f'({e}); keeping current blur {current_blur:.2f}')
-            return current_blur
-
-        x0 = self.cutoutdata.sersic_params_physical['x_0']
-        y0 = self.cutoutdata.sersic_params_physical['y_0']
-
-        scores = {}
-        for candidate in candidates:
-            psf_model, psf_sigma = self.update_psf_blur(float(candidate))
-            center_mask_params = [x0, y0, psf_sigma * 2]
-            try:
-                with warnings.catch_warnings():
-                    warnings.simplefilter('ignore')
-                    phot_result, _resid = do_psf_photometry(
-                        data_bksub, data_error, bkg_std,
-                        psf_model, psf_sigma,
-                        th=calib_th, plot=False,
-                        center_mask_params=center_mask_params)
-            except Exception:
-                scores[float(candidate)] = -1
-                continue
-            scores[float(candidate)] = self._score_blur_pass(
-                phot_result, bkg_std, center_mask_params)
-
-        # Pick the highest-scoring candidate; break ties toward current_blur
-        # by preferring the smallest |candidate - current_blur|.
-        best_score = max(scores.values())
-        best_blur = min(
-            (b for b, s in scores.items() if s == best_score),
-            key=lambda b: abs(b - current_blur),
-        )
-
-        scores_str = ', '.join(f'{b:.2f}:{s}' for b, s in scores.items())
-        logger.info(f'blur calibration [{self.cutoutdata.filtername}]: '
-                    f'{current_blur:.2f} -> {best_blur:.2f}  ({scores_str})')
-        return best_blur
-
-    @staticmethod
-    def _score_blur_pass(phot_result, bkg_std, center_mask_params):
-        ''' Score a PSFPhotometry result for blur calibration.
-
-        Score = number of sources passing filter_psfphot_results quality
-        cuts. A too-sharp or too-blurry PSF produces wider |cfit| and the
-        cfit sigma-clip rejects those detections, so the passing count
-        peaks at the right blur.
+        Step adaptation (user invariant: "keep Δ larger than the jump you
+        just took, so the next bracket doesn't need to extrapolate"):
+          * jump = |new_blur - current|
+          * Δ_next = max(2 * jump, 0.75 * Δ)   (safety factor 2 for
+            extrapolation avoidance; floor at 75% so Δ doesn't collapse
+            when jump=0)
+          * Δ_next is clipped to [psf_blur_min_delta, psf_blur_max_delta].
+          * When the grid minimum lands at an edge (jump = Δ), Δ grows;
+            when it lands interior (|jump| < Δ), Δ shrinks.
         '''
         if phot_result is None or len(phot_result) == 0:
-            return 0
-        s, _ = filter_psfphot_results(
+            return current_blur
+
+        # --- source selection (top K passing sources) --------------------
+        x0 = self.cutoutdata.sersic_params_physical['x_0']
+        y0 = self.cutoutdata.sersic_params_physical['y_0']
+        center_mask_params = [x0, y0, self.psf_sigma * 2]
+        try:
+            _, bkg_std, _ = subtract_background(self.data)
+        except Exception:
+            bkg_std = float(np.nanstd(self.data))
+        s_pass, _ = filter_psfphot_results(
             phot_result,
             center_mask_params=center_mask_params,
             bkg_std=bkg_std)
-        return int(s.sum())
+        passing = phot_result[s_pass]
+        min_sources = config['psf'].get('psf_blur_calib_min_sources', 3)
+        if len(passing) < min_sources:
+            logger.debug(f'blur calibration [{self.cutoutdata.filtername}]: '
+                         f'only {len(passing)} passing sources '
+                         f'(< {min_sources}); skipping')
+            return current_blur
+
+        K = min(config['psf'].get('psf_blur_calib_K', 30), len(passing))
+        order = np.argsort(passing['flux_fit'])[::-1][:K]
+        top = passing[order]
+        init_params = QTable()
+        init_params['x'] = top['x_fit']
+        init_params['y'] = top['y_fit']
+        init_params['flux'] = top['flux_fit']
+
+        # --- build additive 3-point bracket ------------------------------
+        delta_min = float(config['psf'].get('psf_blur_min_delta', 0.1))
+        delta_max = float(config['psf'].get('psf_blur_max_delta', 2.0))
+        if self._blur_delta is None:
+            self._blur_delta = float(
+                config['psf'].get('psf_blur_initial_delta', 0.5))
+        delta = float(np.clip(self._blur_delta, delta_min, delta_max))
+
+        lo = max(delta_min, current_blur - delta)
+        hi = current_blur + delta
+        bracket = [lo, float(current_blur), hi]
+        # Dedupe when clipped at the low end (e.g., current_blur near zero).
+        bracket = sorted(set(round(x, 6) for x in bracket))
+
+        # --- score each bracket point ------------------------------------
+        scores = {}
+        for candidate in bracket:
+            psf_model, _psf_sigma = self.update_psf_blur(float(candidate))
+            try:
+                psfphot = PSFPhotometry(
+                    psf_model,
+                    fit_shape = config['psf']['PSFPhotometry_fit_shape'],
+                    finder = None,
+                    aperture_radius = config['psf']['PSFPhotometry_aperture_radius'],
+                    fitter_maxiters = config['psf']['PSFPhotometry_fitter_maxiters'],
+                )
+                with warnings.catch_warnings():
+                    warnings.simplefilter('ignore')
+                    new_result = psfphot(self.data, init_params=init_params)
+            except Exception as e:
+                logger.debug(f'blur calibration [{self.cutoutdata.filtername}]: '
+                             f'candidate {candidate:.2f} failed: {e}')
+                scores[float(candidate)] = np.inf
+                continue
+            if new_result is None or len(new_result) == 0:
+                scores[float(candidate)] = np.inf
+                continue
+            cfit_med = float(np.nanmedian(np.abs(new_result['cfit'])))
+            qfit_med = float(np.nanmedian(new_result['qfit']))
+            scores[float(candidate)] = cfit_med + qfit_med
+
+        # --- decide the new blur -----------------------------------------
+        improvement_tol = config['psf'].get('psf_blur_improvement_tol', 0.05)
+        current_key = next(
+            (b for b in scores if np.isclose(b, current_blur, rtol=1e-6)),
+            None,
+        )
+        current_score = (scores[current_key] if current_key is not None
+                         else max(v for v in scores.values() if np.isfinite(v)))
+        grid_best_score = min(scores.values())
+        grid_best_blur = min(
+            (b for b, s in scores.items() if s == grid_best_score),
+            key=lambda b: abs(b - current_blur),
+        )
+
+        if grid_best_score < current_score * (1 - improvement_tol):
+            # Grid suggests a real improvement; try parabolic refinement.
+            new_blur = self._parabolic_vertex(scores, current_blur)
+            if new_blur is None:
+                new_blur = grid_best_blur
+        else:
+            new_blur = float(current_blur)
+
+        # --- adapt delta for the NEXT call -------------------------------
+        jump = abs(new_blur - current_blur)
+        if jump > 0:
+            # Ensure next bracket still contains the new point without
+            # extrapolation: delta_next must exceed jump. Factor of 2 is
+            # a reasonable safety margin.
+            next_delta = max(2.0 * jump, 0.75 * delta)
+        else:
+            # No movement: gently shrink so we can detect a smaller optimum
+            # next time, but never collapse to delta_min immediately.
+            next_delta = 0.75 * delta
+        self._blur_delta = float(np.clip(next_delta, delta_min, delta_max))
+
+        # Restore PSF state to the chosen blur for downstream code.
+        self.update_psf_blur(float(new_blur))
+
+        scores_str = ', '.join(f'{b:.2f}:{s:.4f}' for b, s in sorted(scores.items()))
+        logger.info(
+            f'blur calibration [{self.cutoutdata.filtername}] '
+            f'(posterior, K={K}, Δ={delta:.2f}→{self._blur_delta:.2f}): '
+            f'{current_blur:.2f} -> {new_blur:.2f}  ({scores_str})')
+        return new_blur
+
+    @staticmethod
+    def _parabolic_vertex(scores, current_blur):
+        ''' Return the parabolic-fit vertex x-coordinate for 3 equally-spaced
+        (x, score) samples in `scores`, or None if the fit cannot refine
+        past the raw grid minimum (non-convex, vertex outside bracket, or
+        fewer than 3 samples).
+        '''
+        items = sorted(scores.items())
+        if len(items) != 3:
+            return None
+        (x1, y1), (x2, y2), (x3, y3) = items
+        # Require equal spacing (tolerant to float roundoff).
+        h1 = x2 - x1
+        h2 = x3 - x2
+        if not (h1 > 0 and h2 > 0 and np.isclose(h1, h2, rtol=1e-3)):
+            return None
+        curvature = (y1 - 2.0 * y2 + y3)
+        if curvature <= 0:
+            return None  # concave / flat -- no minimum inside the bracket
+        vertex = x2 + h1 * (y1 - y3) / (2.0 * curvature)
+        if vertex < x1 or vertex > x3:
+            return None
+        return float(vertex)
 
     def fit(self,fit_to='sersic_residual',**kwargs):
         ''' Perform PSF fitting.
-        This function calls iterative_psf_fitting, which wraps our main function do_psf_photometry.
-        The role of iterative_psf_fitting is to change the detection threshold level so that the PSF fitter does not end up fitting >1000 sources at the same time in a highly crowded field.
+        This function calls iterative_psf_fitting, which wraps our main
+        function do_psf_photometry. The role of iterative_psf_fitting is to
+        change the detection threshold level so that the PSF fitter does
+        not end up fitting >1000 sources at the same time in a highly
+        crowded field.
 
-        Before running the threshold ladder, this also calibrates the PSF
-        blur: it does a quick PSFPhotometry pass at each candidate blur
-        (defined by config['psf']['psf_blur_factors'] times the current
-        cutoutdata.psf_blurring), scores each by n_passing**2 / n_total,
-        and updates cutoutdata.psf_blurring to the winner. Across main-loop
-        iterations the blur converges as the residual gets cleaner.
+        After the main threshold ladder completes, a cheap posterior
+        calibration step uses the brightest quality-passing sources to
+        evaluate candidate blurs (factor * current_blur) by median cfit
+        and qfit of a refit with finder=None. The winner updates
+        cutoutdata.psf_blurring and drives the NEXT iteration's blur.
 
         Args:
             fit_to (str): the data to fit the PSF to. An attribute of this name needs to exist. A few examples:
@@ -187,26 +285,12 @@ class PSFFitter():
         '''
         self.data = getattr(self.cutoutdata,fit_to)
 
-        # Determine the starting blur. Prefer the live cutoutdata value (set
-        # by a prior PSFFitter.fit call) over the config default so calibration
-        # iteratively refines across main-loop iterations.
+        # Apply the current best blur estimate (from a prior fit() or from
+        # the config default). The ladder runs at this blur; the posterior
+        # step refines the estimate for the NEXT iteration.
         current_blur = self._current_blur_estimate()
-
-        # Calibration step: pick the best blur for this iteration.
         if current_blur:
-            stable_after = config['psf'].get('psf_blur_stable_after', 2)
-            if self._blur_stable_count >= stable_after:
-                logger.debug(f'blur calibration [{self.cutoutdata.filtername}]: '
-                             f'stable at {current_blur:.2f}; skipping')
-                self.update_psf_blur(current_blur)
-            else:
-                new_blur = self._calibrate_blur(current_blur)
-                if np.isclose(new_blur, current_blur, rtol=1e-6):
-                    self._blur_stable_count += 1
-                else:
-                    self._blur_stable_count = 0
-                current_blur = new_blur
-                self.update_psf_blur(current_blur)
+            self.update_psf_blur(current_blur)
             self.cutoutdata.psf_blurring = current_blur
         else:
             logger.debug('Using original PSF without blurring')
@@ -215,7 +299,7 @@ class PSFFitter():
         y0 = self.cutoutdata.sersic_params_physical['y_0']
         center_mask_params = [x0,y0,self.psf_sigma*2]
 
-        # Threshold ladder at the chosen blur.
+        # Threshold ladder at the current blur.
         th_min = config['psf'].get('th_min',1.5)
         th_max = config['psf'].get('th_max',4.0)
         th_iter = config['psf'].get('th_iter',10)
@@ -230,6 +314,20 @@ class PSFFitter():
                 threshold_list = threshold_list,
                 center_mask_params=center_mask_params,
                 **kwargs)
+
+        # Posterior blur calibration: drives the blur for the NEXT iteration.
+        if current_blur and psf_table is not None:
+            stable_after = config['psf'].get('psf_blur_stable_after', 2)
+            if self._blur_stable_count >= stable_after:
+                logger.debug(f'blur calibration [{self.cutoutdata.filtername}]: '
+                             f'stable at {current_blur:.2f}; skipping')
+            else:
+                new_blur = self._posterior_calibrate_blur(current_blur, psf_table)
+                if np.isclose(new_blur, current_blur, rtol=1e-6):
+                    self._blur_stable_count += 1
+                else:
+                    self._blur_stable_count = 0
+                self.cutoutdata.psf_blurring = new_blur
             
         psf_model_total = self.data - resid
         psf_model_total -= np.nanmin(psf_model_total) # PSFs are forced to be positive, so minimum is always zero

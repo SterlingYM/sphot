@@ -32,16 +32,28 @@ th_max_consec_empty = 3
 mask_aper_size_in_r_eff = 3.5
 raise_error = false
 residual_clip_sigma = 15.0 # keep this high to avoid over-masking
-# Blur calibration candidates: each PSFFitter.fit() evaluates these factors
-# times the current best blur, picks the one that maximises the number of
-# sources surviving the quality cuts. Include 1.0 to keep the current value
-# as a baseline. Set to [1.0] to spend one extra PSFPhotometry pass per
-# iteration but keep the blur pinned to its initial value.
-psf_blur_factors = [0.8, 1.0, 1.2]
+# Posterior blur calibration: after the main threshold ladder, each
+# PSFFitter.fit() re-fits the K brightest quality-passing sources with the
+# PSF rebuilt at a 3-point additive bracket [current - Δ, current, current + Δ]
+# and picks the vertex of a parabolic fit through the (cfit+qfit) metric.
+# Δ is an adaptive step (in pixels) tracked across fit() calls: it grows
+# when the bracket's minimum lands at an edge (too narrow), shrinks when
+# it lands at the interior (converging).
+psf_blur_initial_delta = 0.5 # starting Δ in pixels
+psf_blur_min_delta = 0.1     # never search finer than this
+psf_blur_max_delta = 2.0     # never search wider than this
+# Number of brightest quality-passing sources to re-fit per candidate.
+# Smaller = faster calibration but noisier metric.
+psf_blur_calib_K = 30
+# Skip calibration when fewer than this many sources pass the quality cuts.
+psf_blur_calib_min_sources = 3
+# Require the grid minimum's (cfit+qfit) score to beat the current blur's
+# score by at least this relative amount before switching. Prevents
+# noise-driven oscillation when the metric is flat. 0.05 = 5% improvement.
+psf_blur_improvement_tol = 0.05
 # After this many consecutive fit() calls where the calibration returns the
-# same blur, stop calibrating (short-circuit to update_psf_blur only). Reset
-# by externally setting cutoutdata.psf_blurring to a new value. Set very high
-# to always recalibrate.
+# same blur, skip further calibrations until cutoutdata.psf_blurring is
+# externally reset. Set very high to always recalibrate.
 psf_blur_stable_after = 2
 
 # finder/grouper/bkg parameters
