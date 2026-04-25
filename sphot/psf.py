@@ -123,22 +123,30 @@ class PSFFitter():
         return ' [dim]→[/dim] '.join(parts)
 
     def _update_blur_display(self, progress):
-        ''' Push the current trajectory into the progress display.
-        Falls back to logger.info if no progress object is available.
+        ''' Push the current trajectory into the live display.
+
+        Preferred path: write to `progress.blur_panel`, a persistent
+        renderable that core.showprogress places BELOW the progress block
+        so calibration summaries always sit at the bottom of the live
+        view, regardless of which transient progress tasks are active.
+
+        Fallbacks (in order): a display-only progress task (when no
+        BlurPanel is attached -- e.g. caller passed their own Progress);
+        plain logger.info (when no progress object exists at all).
         '''
         rendered = self._render_blur_trajectory()
         desc = f'[cyan]blur[/cyan] [{self.cutoutdata.filtername}]: {rendered}'
-        if progress is not None:
+        blur_panel = getattr(progress, 'blur_panel', None) if progress else None
+        if blur_panel is not None:
+            blur_panel.update(self.cutoutdata.filtername, desc)
+        elif progress is not None:
             if self._blur_task_id is None:
-                # Display-only task (no real bar): completed==total renders
-                # the bar as full so it doesn't look like an in-progress job.
                 self._blur_task_id = progress.add_task(
                     desc, total=1, completed=1)
             else:
                 progress.update(self._blur_task_id,
                                 description=desc, completed=1)
         else:
-            # Strip rich markup for the plain logger fallback.
             plain = (rendered
                      .replace('[green]', '').replace('[/green]', '')
                      .replace('[dim]', '').replace('[/dim]', ''))

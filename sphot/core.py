@@ -11,11 +11,32 @@ import warnings
 import numpy as np
 from rich.progress import (Progress, TimeElapsedColumn,
                            TimeRemainingColumn, BarColumn, TextColumn)
+from rich.live import Live
+from rich.console import Group
+from rich.text import Text
 from rich import get_console
 import logging
 import matplotlib.pyplot as plt
 
 from .logging import logger
+
+
+class BlurPanel:
+    ''' Renderable that holds one Text per filter for the blur calibration
+    trajectory. Rendered as a Group below the rich Progress so calibration
+    summaries always sit at the bottom of the live display, regardless of
+    how many transient progress tasks come and go above them.
+    '''
+    def __init__(self):
+        self.lines = {}  # filtername -> Text
+
+    def update(self, filtername, markup):
+        # Replace the line wholesale; Live re-renders on the next refresh.
+        self.lines[filtername] = Text.from_markup(markup)
+
+    def __rich_console__(self, console, options):
+        for line in self.lines.values():
+            yield line
 
 
 def _params_converged(prev, curr, atol):
@@ -53,9 +74,17 @@ def showprogress(func):
                 TimeElapsedColumn(),
                 TimeRemainingColumn(),
                 transient=False,
-                console=console
+                console=console,
             )
-            with progress:
+            # Persistent blur-calibration panel rendered BELOW the progress
+            # block. Attached to `progress` so PSFFitter can find it without
+            # extra kwargs threading.
+            blur_panel = BlurPanel()
+            progress.blur_panel = blur_panel
+            live = Live(Group(progress, blur_panel),
+                        console=console, refresh_per_second=4,
+                        transient=False)
+            with live:
                 kwargs.update(dict(progress=progress))
                 return func(*args,**kwargs)
         else:
