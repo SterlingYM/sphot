@@ -44,6 +44,11 @@ class PSFFitter():
         # too narrow); shrinks when we converge to the interior.
         self._blur_delta = None
 
+        # Trajectory of blur values across this fitter's calibrations;
+        # rendered live in the rich progress display (one task per fitter).
+        self._blur_trajectory = []
+        self._blur_task_id = None
+
             # PSF image to model
         self.psf_model = self.psf_img2model(cutoutdata.psf,cutoutdata.psf_oversample)
         
@@ -90,7 +95,57 @@ class PSFFitter():
             return blur_psf_dict.get(self.cutoutdata.filtername, False)
         return blur_psf_dict
 
-    def _posterior_calibrate_blur(self, current_blur, phot_result):
+    def _render_blur_trajectory(self):
+        ''' Render the recorded blur trajectory as a rich-markup string.
+
+        The longest run of equal trailing values (length >= 2) is rendered
+        in green to indicate convergence; earlier values are plain.
+        '''
+        history = self._blur_trajectory
+        if not history:
+            return ''
+        last = history[-1]
+        # Count the trailing run of values equal to `last`.
+        run = 1
+        for v in reversed(history[:-1]):
+            if abs(v - last) < 1e-6:
+                run += 1
+            else:
+                break
+        converged = run >= 2
+        parts = []
+        for i, v in enumerate(history):
+            in_tail = (len(history) - i) <= run
+            if converged and in_tail:
+                parts.append(f'[green]{v:.2f}[/green]')
+            else:
+                parts.append(f'{v:.2f}')
+        return ' [dim]→[/dim] '.join(parts)
+
+    def _update_blur_display(self, progress):
+        ''' Push the current trajectory into the progress display.
+        Falls back to logger.info if no progress object is available.
+        '''
+        rendered = self._render_blur_trajectory()
+        desc = f'[cyan]blur[/cyan] [{self.cutoutdata.filtername}]: {rendered}'
+        if progress is not None:
+            if self._blur_task_id is None:
+                # Display-only task (no real bar): completed==total renders
+                # the bar as full so it doesn't look like an in-progress job.
+                self._blur_task_id = progress.add_task(
+                    desc, total=1, completed=1)
+            else:
+                progress.update(self._blur_task_id,
+                                description=desc, completed=1)
+        else:
+            # Strip rich markup for the plain logger fallback.
+            plain = (rendered
+                     .replace('[green]', '').replace('[/green]', '')
+                     .replace('[dim]', '').replace('[/dim]', ''))
+            logger.info(f'blur calibration [{self.cutoutdata.filtername}]: '
+                        f'{plain}')
+
+    def _posterior_calibrate_blur(self, current_blur, phot_result, progress=None):
         ''' Posterior blur calibration with adaptive additive step and
         parabolic interpolation.
 
@@ -120,6 +175,12 @@ class PSFFitter():
         '''
         if phot_result is None or len(phot_result) == 0:
             return current_blur
+
+        # Seed the trajectory with the starting blur on the first call so
+        # the rich display reads "3.80 -> 3.30 -> ..." rather than starting
+        # at the first jump.
+        if not self._blur_trajectory:
+            self._blur_trajectory.append(float(current_blur))
 
         # --- source selection (top K passing sources) --------------------
         x0 = self.cutoutdata.sersic_params_physical['x_0']
@@ -228,11 +289,9 @@ class PSFFitter():
         # Restore PSF state to the chosen blur for downstream code.
         self.update_psf_blur(float(new_blur))
 
-        scores_str = ', '.join(f'{b:.2f}:{s:.4f}' for b, s in sorted(scores.items()))
-        logger.info(
-            f'blur calibration [{self.cutoutdata.filtername}] '
-            f'(posterior, K={K}, Δ={delta:.2f}→{self._blur_delta:.2f}): '
-            f'{current_blur:.2f} -> {new_blur:.2f}  ({scores_str})')
+        # Record the trajectory and refresh the live display.
+        self._blur_trajectory.append(float(new_blur))
+        self._update_blur_display(progress)
         return new_blur
 
     @staticmethod
@@ -322,7 +381,8 @@ class PSFFitter():
                 logger.debug(f'blur calibration [{self.cutoutdata.filtername}]: '
                              f'stable at {current_blur:.2f}; skipping')
             else:
-                new_blur = self._posterior_calibrate_blur(current_blur, psf_table)
+                new_blur = self._posterior_calibrate_blur(
+                    current_blur, psf_table, progress=kwargs.get('progress'))
                 if np.isclose(new_blur, current_blur, rtol=1e-6):
                     self._blur_stable_count += 1
                 else:
