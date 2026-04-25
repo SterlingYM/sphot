@@ -20,10 +20,6 @@ allow_refit = false
 mainloop_convergence_atol = 1e-3
 mainloop_convergence_patience = 2
 mainloop_min_iter = 2
-# Space in which the iterative Nelder-Mead chi2 is evaluated:
-#   'linear' -> chi2 = sum(((data - model)/err)^2)
-#   'log'    -> chi2 = sum((log(data) - log(model))^2)  (unweighted)
-chi2_space = 'linear'
 
 [psf]
 # iterative fit settings
