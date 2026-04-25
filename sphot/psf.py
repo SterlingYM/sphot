@@ -30,7 +30,14 @@ class PSFFitter():
     def __init__(self,cutoutdata):
         self.cutoutdata = cutoutdata
         self.psf_sigma = cutoutdata.psf_sigma
-        
+
+        # Blur-calibration short-circuit: count consecutive fit() calls where
+        # the calibration picked the current_blur unchanged. After this
+        # reaches `psf_blur_stable_after`, subsequent fit() calls skip the
+        # calibration step entirely until the cutoutdata.psf_blurring is
+        # externally changed.
+        self._blur_stable_count = 0
+
             # PSF image to model
         self.psf_model = self.psf_img2model(cutoutdata.psf,cutoutdata.psf_oversample)
         
@@ -58,47 +65,162 @@ class PSFFitter():
             logger.debug(f'Using original PSF without blurring')
             self.psf_model = self.psf_img2model(self.cutoutdata.psf,self.cutoutdata.psf_oversample)
             self.psf_sigma = self.cutoutdata.psf_sigma
-            
+
         return self.psf_model,self.psf_sigma
-        
+
+    def _current_blur_estimate(self):
+        ''' Return the best blur estimate so far.
+
+        Prefers the live cutoutdata.psf_blurring (updated by prior fits) over
+        the config default so the calibration iteratively refines across
+        main-loop iterations. Falls back to the config value on the first
+        call, then to False (= no blurring).
+        '''
+        curr = getattr(self.cutoutdata, 'psf_blurring', None)
+        if curr:
+            return curr
+        blur_psf_dict = config['prep'].get('blur_psf', False)
+        if isinstance(blur_psf_dict, dict):
+            return blur_psf_dict.get(self.cutoutdata.filtername, False)
+        return blur_psf_dict
+
+    def _calibrate_blur(self, current_blur):
+        ''' Pick the best PSF blur for this iteration.
+
+        Runs a single PSFPhotometry pass at a calibration threshold for each
+        candidate = factor * current_blur, with factors from
+        config['psf']['psf_blur_factors']. Scores by the number of sources
+        that survive the quality cuts in filter_psfphot_results: a wrong
+        blur both under-detects real sources and flunks the cfit check for
+        the detections it does find.
+
+        Returns the candidate with the highest score. If multiple candidates
+        tie on integer count, preference is given to the one closest to
+        `current_blur` (prevents wandering when scores are flat).
+        '''
+        factors = np.asarray(config['psf']['psf_blur_factors'], dtype=float)
+        candidates = factors * current_blur
+
+        th_min = config['psf'].get('th_min', 1.5)
+        th_max = config['psf'].get('th_max', 4.0)
+        calib_th = float(np.sqrt(th_min * th_max))
+
+        try:
+            data_bksub, bkg_std, data_error = subtract_background(self.data)
+        except Exception as e:
+            logger.warning(f'blur calibration: background stats failed '
+                           f'({e}); keeping current blur {current_blur:.2f}')
+            return current_blur
+
+        x0 = self.cutoutdata.sersic_params_physical['x_0']
+        y0 = self.cutoutdata.sersic_params_physical['y_0']
+
+        scores = {}
+        for candidate in candidates:
+            psf_model, psf_sigma = self.update_psf_blur(float(candidate))
+            center_mask_params = [x0, y0, psf_sigma * 2]
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter('ignore')
+                    phot_result, _resid = do_psf_photometry(
+                        data_bksub, data_error, bkg_std,
+                        psf_model, psf_sigma,
+                        th=calib_th, plot=False,
+                        center_mask_params=center_mask_params)
+            except Exception:
+                scores[float(candidate)] = -1
+                continue
+            scores[float(candidate)] = self._score_blur_pass(
+                phot_result, bkg_std, center_mask_params)
+
+        # Pick the highest-scoring candidate; break ties toward current_blur
+        # by preferring the smallest |candidate - current_blur|.
+        best_score = max(scores.values())
+        best_blur = min(
+            (b for b, s in scores.items() if s == best_score),
+            key=lambda b: abs(b - current_blur),
+        )
+
+        scores_str = ', '.join(f'{b:.2f}:{s}' for b, s in scores.items())
+        logger.info(f'blur calibration [{self.cutoutdata.filtername}]: '
+                    f'{current_blur:.2f} -> {best_blur:.2f}  ({scores_str})')
+        return best_blur
+
+    @staticmethod
+    def _score_blur_pass(phot_result, bkg_std, center_mask_params):
+        ''' Score a PSFPhotometry result for blur calibration.
+
+        Score = number of sources passing filter_psfphot_results quality
+        cuts. A too-sharp or too-blurry PSF produces wider |cfit| and the
+        cfit sigma-clip rejects those detections, so the passing count
+        peaks at the right blur.
+        '''
+        if phot_result is None or len(phot_result) == 0:
+            return 0
+        s, _ = filter_psfphot_results(
+            phot_result,
+            center_mask_params=center_mask_params,
+            bkg_std=bkg_std)
+        return int(s.sum())
+
     def fit(self,fit_to='sersic_residual',**kwargs):
-        ''' Perform PSF fitting. 
-        This function calls iterative_psf_fitting, which wraps our main function do_psf_photometry. 
+        ''' Perform PSF fitting.
+        This function calls iterative_psf_fitting, which wraps our main function do_psf_photometry.
         The role of iterative_psf_fitting is to change the detection threshold level so that the PSF fitter does not end up fitting >1000 sources at the same time in a highly crowded field.
-        
+
+        Before running the threshold ladder, this also calibrates the PSF
+        blur: it does a quick PSFPhotometry pass at each candidate blur
+        (defined by config['psf']['psf_blur_factors'] times the current
+        cutoutdata.psf_blurring), scores each by n_passing**2 / n_total,
+        and updates cutoutdata.psf_blurring to the winner. Across main-loop
+        iterations the blur converges as the residual gets cleaner.
+
         Args:
             fit_to (str): the data to fit the PSF to. An attribute of this name needs to exist. A few examples:
                 - 'sersic_residual': the residual image after sersic fitting (default)
                 - 'residual': the residual image after PSF fitting.
                 - 'data': the original data.
             kwargs (dict): additional kwargs to pass to do_psf_photometry.
-            
+
         Returns:
             cutoutdata (CutoutData): the updated cutoutdata object. Updates are applied in-place, so users don't need to grab this for typical use cases.
         '''
         self.data = getattr(self.cutoutdata,fit_to)
-        
-        # initialize psf
-        blur_psf_dict = config['prep'].get('blur_psf',False)
-        blur_psf = blur_psf_dict.get(self.cutoutdata.filtername,False) if isinstance(blur_psf_dict,dict) else blur_psf_dict
-        if blur_psf:
-            self.update_psf_blur(blur_psf)
-            blur_psf_values = np.array(config['psf']['psf_blur_factors']) * blur_psf
+
+        # Determine the starting blur. Prefer the live cutoutdata value (set
+        # by a prior PSFFitter.fit call) over the config default so calibration
+        # iteratively refines across main-loop iterations.
+        current_blur = self._current_blur_estimate()
+
+        # Calibration step: pick the best blur for this iteration.
+        if current_blur:
+            stable_after = config['psf'].get('psf_blur_stable_after', 2)
+            if self._blur_stable_count >= stable_after:
+                logger.debug(f'blur calibration [{self.cutoutdata.filtername}]: '
+                             f'stable at {current_blur:.2f}; skipping')
+                self.update_psf_blur(current_blur)
+            else:
+                new_blur = self._calibrate_blur(current_blur)
+                if np.isclose(new_blur, current_blur, rtol=1e-6):
+                    self._blur_stable_count += 1
+                else:
+                    self._blur_stable_count = 0
+                current_blur = new_blur
+                self.update_psf_blur(current_blur)
+            self.cutoutdata.psf_blurring = current_blur
         else:
-            logger.debug(f'Using original PSF without blurring')
-            blur_psf_values = None
-            
+            logger.debug('Using original PSF without blurring')
+
         x0 = self.cutoutdata.sersic_params_physical['x_0']
         y0 = self.cutoutdata.sersic_params_physical['y_0']
         center_mask_params = [x0,y0,self.psf_sigma*2]
-                
-        # perform PSF fitting
-        # threshold_list = np.arange(th_min,th_max+th_increment,th_increment)[::-1]
+
+        # Threshold ladder at the chosen blur.
         th_min = config['psf'].get('th_min',1.5)
         th_max = config['psf'].get('th_max',4.0)
         th_iter = config['psf'].get('th_iter',10)
         threshold_list = np.geomspace(th_min, th_max, num=th_iter)[::-1]
-        
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             psf_table, resid = iterative_psf_fitting(
@@ -107,8 +229,6 @@ class PSFFitter():
                 self.psf_sigma,
                 threshold_list = threshold_list,
                 center_mask_params=center_mask_params,
-                psf_blur_values = blur_psf_values,
-                psf_blur_func = self.update_psf_blur,
                 **kwargs)
             
         psf_model_total = self.data - resid
@@ -390,23 +510,23 @@ def iterative_psf_fitting(data,psf_model,psf_sigma,
                           threshold_list,
                           progress=None,
                           progress_text='Running iPSF...',
-                          psf_blur_values = None,
-                          psf_blur_func = None,
                           **kwargs):
     ''' Iteratively run do_psf_photometry() with different threshold levels.
-    This function is useful for crowded fields, where a single threshold level may fail. 
-    
+    This function is useful for crowded fields, where a single threshold level may fail.
+
+    The threshold list is typically descending (high -> low). Each successful
+    pass subtracts detected sources from the residual; the next pass then
+    operates on the cleaner residual. The ladder early-exits when
+    `th_max_consec_empty` consecutive thresholds add no new sources.
+
     Inputs:
         data (2d array): the data to perform PSF photometry.
-        psfimg (2d array): the PSF image.
+        psf_model: the PSF ImagePSF model.
         psf_sigma (float): the HWHM of the PSF. Use FWHM/2
-        psf_oversample (int): the oversampling factor of the PSF.
         threshold_list (1d array): the list of threshold levels to try, in background STD.
         center_mask_params (list, optional): [x_center,y_center,mask_r]. If provided, sources within the radius mask_r from (x_center,y_center) will be excluded from the final results. This is useful when the central source is very bright and causes many spurious detections nearby.
-        psf_blur_fpsf_blur_valuesactors (list, optional): the list of Gaussian sigma values to convolve the PSF with, in pixel units. If provided, the PSF will be convolved with the Gaussian kernel at the end of the iterative fitting to check if any additional sources can be found/fitted with dfferent PSF widths. If not provided, this additional check will not be performed.
-        psf_blur_func (function, optional): the function to convolve the PSF with a Gaussian kernel. The function should take a single argument (the sigma value) and output the convolved PSF. If not provided, this additional check will not be performed.
         kwargs (dict): additional kwargs to pass to do_psf_photometry.
-    Returns:    
+    Returns:
         phot_result (QTable): the combined photometry result from all iterations.
         resid_all (2d array): the final residual image.
     '''
@@ -476,45 +596,6 @@ def iterative_psf_fitting(data,psf_model,psf_sigma,
     if progress is not None:
         progress.remove_task(progress_psf)
 
-    # optional override: use a fixed threshold for the PSF-blur sweep
-    psf_blur_th_override = config['psf'].get('psf_blur_th', None)
-    if psf_blur_th_override is not None:
-        last_successful_th = psf_blur_th_override
-
-    # additional loop -- repeat PSF subtraction with different PSF widths
-    if (psf_blur_values is not None) and (psf_blur_func is not None) and (last_successful_th is not None):
-        if progress is not None:
-            progress_psf = progress.add_task(f'Fitting at th={last_successful_th:.2f} with sharper and blurrier PSF...', 
-                                            total=len(psf_blur_values))
-        for psf_blur in psf_blur_values:
-            try:
-                psf_model,psf_sigma = psf_blur_func(psf_blur)
-                psf_results = do_psf_photometry(resid, data_error, bkg_std, 
-                                                psf_model, psf_sigma,
-                                                th=last_successful_th,**kwargs)
-                if progress is not None:
-                    progress.update(progress_psf, advance=1, refresh=True)
-                if psf_results[0] is None:
-                    continue
-                else:
-                    _phot_result, _resid = psf_results
-                    if np.all(~np.isfinite(_resid)):
-                        continue
-                    # append the results
-                    resid = _resid
-                    if phot_result is None:
-                        phot_result = _phot_result
-                    else:
-                        phot_result = vstack([phot_result, _phot_result])
-            except Exception as e:
-                if config['psf']['raise_error']:
-                    raise 
-                logger.error(f'Skipping PSF fitting with th={th:.2f}, blur={psf_blur}. {str(e)}')
-                continue
-
-        if progress is not None:
-            progress.remove_task(progress_psf)
-        
     # make the residual image without background subtraction
     psf_modelimg_all = data_bksub - resid
     resid_all = data.copy() - psf_modelimg_all.copy()

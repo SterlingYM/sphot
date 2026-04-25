@@ -32,7 +32,17 @@ th_max_consec_empty = 3
 mask_aper_size_in_r_eff = 3.5
 raise_error = false
 residual_clip_sigma = 15.0 # keep this high to avoid over-masking
-psf_blur_factors = [0.8,1.2] # try changing the PSF width by these factors times psf_blur values
+# Blur calibration candidates: each PSFFitter.fit() evaluates these factors
+# times the current best blur, picks the one that maximises the number of
+# sources surviving the quality cuts. Include 1.0 to keep the current value
+# as a baseline. Set to [1.0] to spend one extra PSFPhotometry pass per
+# iteration but keep the blur pinned to its initial value.
+psf_blur_factors = [0.8, 1.0, 1.2]
+# After this many consecutive fit() calls where the calibration returns the
+# same blur, stop calibrating (short-circuit to update_psf_blur only). Reset
+# by externally setting cutoutdata.psf_blurring to a new value. Set very high
+# to always recalibrate.
+psf_blur_stable_after = 2
 
 # finder/grouper/bkg parameters
 finder_kwargs = {roundness_range=[-1.0, 1.0], sharpness_range=[0.20, 1.0]}
