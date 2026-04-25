@@ -10,7 +10,7 @@ auto_crop_factor = 8 # size of each axis in units of STD of best-fit Gaussian
 [core]
 base_filter = 'F150W'
 iter_basefit = 10
-iter_scalefit = 3
+iter_scalefit = 5
 fit_complex_model = false
 allow_refit = false
 # Main-loop early-exit: stop iterating when sersic params (standardized [0,1]
@@ -23,12 +23,21 @@ mainloop_min_iter = 2
 
 [psf]
 # iterative fit settings
-th_min = 1.5
-th_max = 30
+th_min = 1
+th_max = 10
 th_iter = 10 # N_iteration between min and max
 # Early-stop the threshold sweep after this many consecutive thresholds add
 # no new sources. Set very high to disable.
 th_max_consec_empty = 3
+# After each successful threshold pass, re-estimate bkg_std from the cleaned
+# residual. In crowded fields the initial noise estimate is dominated by the
+# unresolved-star carpet, so subsequent thresholds can ratchet down as
+# sources are subtracted, exposing dim stars buried in the apparent noise.
+bkg_refit_per_iteration = true
+# Floor on the re-estimated bkg_std as a fraction of the initial value.
+# Prevents thresholds from collapsing if the residual happens to look very
+# clean over a small box (e.g. one well-fit bright source).
+bkg_floor_factor = 0.3
 mask_aper_size_in_r_eff = 3.5
 raise_error = false
 residual_clip_sigma = 15.0 # keep this high to avoid over-masking
@@ -80,7 +89,7 @@ cuts_res_cen_sigma_clip = 3.0 # -N*bkg_std < res_cen < max(N*std(res_cen), N*bkg
 cuts_cfit_sigma_clip = 3.0 # N-sigma for cfit
 # cuts_qfit_median_factor = 2.0 # max_qfit/median(qfit)
 cuts_chi2dof_median_factor = 3.0 # max_chi2dof/median(chi2dof)
-cuts_pos_diff_median_factor = 2.0 # max_pos_diff/median(pos_diff)
+cuts_pos_diff_median_factor = 3.0 # max_pos_diff/median(pos_diff)
 cuts_flux_SNR_min = 1.0 # min flux_SNR
 
 [aperture]

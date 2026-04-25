@@ -29,6 +29,15 @@ th_iter = 10 # N_iteration between min and max
 # Early-stop the threshold sweep after this many consecutive thresholds add
 # no new sources. Set very high to disable.
 th_max_consec_empty = 3
+# After each successful threshold pass, re-estimate bkg_std from the cleaned
+# residual. In crowded fields the initial noise estimate is dominated by the
+# unresolved-star carpet, so subsequent thresholds can ratchet down as
+# sources are subtracted, exposing dim stars buried in the apparent noise.
+bkg_refit_per_iteration = true
+# Floor on the re-estimated bkg_std as a fraction of the initial value.
+# Prevents thresholds from collapsing if the residual happens to look very
+# clean over a small box (e.g. one well-fit bright source).
+bkg_floor_factor = 0.3
 mask_aper_size_in_r_eff = 3.5
 raise_error = false
 residual_clip_sigma = 15.0 # keep this high to avoid over-masking

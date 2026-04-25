@@ -732,6 +732,15 @@ def iterative_psf_fitting(data,psf_model,psf_sigma,
     max_consec_empty = config['psf'].get('th_max_consec_empty', 3)
     consec_empty = 0
 
+    # In a crowded field the initial bkg_std is dominated by the unresolved
+    # star carpet, so a "1.5 sigma" threshold is really "1.5 sigma above the
+    # carpet". As we subtract sources iteratively the residual gets cleaner
+    # and the true noise floor drops -- re-estimate after each successful
+    # pass so subsequent thresholds catch the dim sources we just exposed.
+    refit_bkg = config['psf'].get('bkg_refit_per_iteration', True)
+    bkg_floor_factor = float(config['psf'].get('bkg_floor_factor', 0.3))
+    initial_bkg_std = float(bkg_std)
+
     # loop -- repeat PSF subtraction
     if progress is not None:
         progress_psf = progress.add_task(progress_text,
@@ -764,6 +773,21 @@ def iterative_psf_fitting(data,psf_model,psf_sigma,
 
         if added_sources:
             consec_empty = 0
+            # Re-estimate the noise floor from the freshly-cleaned residual.
+            # In crowded fields this drops with each pass as we peel off the
+            # unresolved-star carpet, so the next th=th*bkg_std threshold
+            # corresponds to a lower absolute count and can pick up dim
+            # stars that were buried in the apparent "noise" before.
+            if refit_bkg:
+                try:
+                    bkgrms_estimator = MADStdBackgroundRMS()
+                    new_std = float(bkgrms_estimator(resid))
+                    floor = initial_bkg_std * bkg_floor_factor
+                    bkg_std = max(new_std, floor)
+                    data_error = np.ones_like(resid) * bkg_std
+                except Exception as e:
+                    logger.debug(f'bkg re-estimation failed at th={th:.2f}: '
+                                 f'{e}')
         else:
             consec_empty += 1
             if (last_successful_th is not None
