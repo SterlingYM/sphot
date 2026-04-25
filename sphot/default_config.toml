@@ -13,6 +13,15 @@ iter_basefit = 10
 iter_scalefit = 3
 fit_complex_model = false
 allow_refit = false
+# Space in which the iterative Nelder-Mead chi2 is evaluated:
+#   'linear' -> chi2 = sum(((data - model)/err)^2)
+#   'log'    -> chi2 = sum(((log(data) - log(model))/(err/data))^2)
+# Linear is the historical default. Log de-emphasises the bright core
+# and gives more weight to the outer profile, so the Sersic shape isn't
+# pinned by the central pixel; non-positive pixels are excluded in log
+# space. Affects ModelFitter and ModelScaleFitter (Sersic fits only --
+# the PSF photometry uses photutils' own LM fitter).
+chi2_space = 'linear'
 # Main-loop early-exit: stop iterating when sersic params (standardized [0,1]
 # parameter vector) move by less than mainloop_convergence_atol for
 # mainloop_convergence_patience consecutive iterations, but never before

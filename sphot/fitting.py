@@ -5,6 +5,50 @@ from scipy.optimize import minimize, dual_annealing
 from scipy.ndimage import zoom
 
 from petrofit import PSFConvolvedModel2D, model_to_image
+
+from .config import config
+
+
+def _compute_chi2(data, model_img, err, space):
+    ''' Reduced chi2 between data and model, in either linear or log
+    flux space.
+
+    Linear (default, historical behaviour):
+        chi2 = sum(((data - model) / err)^2) / N_finite
+
+    Log:
+        chi2 = sum((log(data) - log(model))^2) / N_valid
+        Only pixels with finite, strictly positive `data` and `model`
+        contribute (log of a non-positive value is undefined). The
+        formal log-space error err_log = err/data would, with the
+        constant err sphot uses (= bkg_std), reweight every pixel by
+        d^2/err^2 and make the bright core overwhelmingly dominant --
+        i.e. the opposite of what users want from log-space fitting.
+        Each pixel therefore contributes equally to the chi2 sum, so
+        the metric measures relative residuals across the whole
+        profile rather than absolute residuals dominated by the core.
+        The `err` argument is unused in log mode.
+
+    Returns np.inf if no valid pixels remain (e.g. log mode with
+    all-non-positive data).
+    '''
+    if space == 'log':
+        s = (np.isfinite(data) & np.isfinite(model_img)
+             & (data > 0) & (model_img > 0))
+        if s.sum() == 0:
+            return np.inf
+        log_resid = np.log(data[s]) - np.log(model_img[s])
+        return float(np.sum(log_resid ** 2) / s.sum())
+    elif space == 'linear':
+        if err is None:
+            chi2 = np.nansum((data - model_img) ** 2)
+        else:
+            chi2 = np.nansum(((data - model_img) / err) ** 2)
+        n = int(np.isfinite(data).sum())
+        return chi2 / max(n, 1)
+    else:
+        raise ValueError(
+            f"chi2_space must be 'linear' or 'log', got {space!r}")
         
 class SphotModel(PSFConvolvedModel2D):
     def __init__(self,model,cutoutdata,resample_psf=True,**kwargs):
@@ -155,22 +199,19 @@ class ModelFitter():
         if condition_func:
             if condition_func(standardized_params) == False:
                 return np.inf
-        
+
         # evaluate model
         model_img = self.eval_model(standardized_params)
-        
+
         # sanity check
         if np.isfinite(model_img).sum() == 0:
             return np.inf
-        
-        if self.err is None:
-            chi2 = np.nansum((self.data - model_img)**2)
-        else:
-            chi2 = np.nansum(((self.data - model_img)/self.err)**2)
-        chi2 /= np.isfinite(self.data).sum()
+
+        space = config['core'].get('chi2_space', 'linear')
+        chi2 = _compute_chi2(self.data, model_img, self.err, space)
         if chi2 <= chi2_min_allowed:
             return np.inf
-        
+
         if print_val:
             print(f'\r {chi2:.4e} {iterinfo}   ',end='',flush=True)
         return chi2
@@ -251,27 +292,24 @@ class ModelScaleFitter(ModelFitter):
 
     def calc_chi2(self,flux_scale,
                   iterinfo='',print_val=False,chi2_min_allowed=1e-10):
-        
-        scaled_modelparams = self.scale_params(flux_scale)  
-        
+
+        scaled_modelparams = self.scale_params(flux_scale)
+
         # parameter sanity check
         condition_func = getattr(self.model,'condition_func',False)
         if condition_func:
             if condition_func(scaled_modelparams) == False:
                 return np.inf
-        
+
         # evaluate model
         model_img = self.eval_model(scaled_modelparams)
-        
+
         # sanity check
         if np.isfinite(model_img).sum() == 0:
             return np.inf
-        
-        if self.err is None:
-            chi2 = np.nansum((self.data - model_img)**2)
-        else:
-            chi2 = np.nansum(((self.data - model_img)/self.err)**2)
-        chi2 /= np.isfinite(self.data).sum()
+
+        space = config['core'].get('chi2_space', 'linear')
+        chi2 = _compute_chi2(self.data, model_img, self.err, space)
         if chi2 <= chi2_min_allowed:
             return np.inf
         
