@@ -210,18 +210,22 @@ class PSFFitter():
         init_params['y'] = top['y_fit']
         init_params['flux'] = top['flux_fit']
 
-        # --- build additive 3-point bracket ------------------------------
-        delta_min = float(config['psf'].get('psf_blur_min_delta', 0.1))
+        # --- build additive 4-point symmetric bracket --------------------
+        # Points: [current - Δ, current - Δ/3, current + Δ/3, current + Δ].
+        # Four samples instead of three give an over-determined quadratic
+        # fit (np.polyfit deg=2) that averages out per-pixel noise in the
+        # cfit/qfit metric.
+        delta_min = float(config['psf'].get('psf_blur_min_delta', 0.05))
         delta_max = float(config['psf'].get('psf_blur_max_delta', 2.0))
         if self._blur_delta is None:
             self._blur_delta = float(
-                config['psf'].get('psf_blur_initial_delta', 0.5))
+                config['psf'].get('psf_blur_initial_delta', 0.3))
         delta = float(np.clip(self._blur_delta, delta_min, delta_max))
 
-        lo = max(delta_min, current_blur - delta)
-        hi = current_blur + delta
-        bracket = [lo, float(current_blur), hi]
-        # Dedupe when clipped at the low end (e.g., current_blur near zero).
+        step = (2.0 * delta) / 3.0
+        bracket = [current_blur - delta + i * step for i in range(4)]
+        # Clip the low end (current_blur near zero) and dedupe.
+        bracket = [max(delta_min, x) for x in bracket]
         bracket = sorted(set(round(x, 6) for x in bracket))
 
         # --- score each bracket point ------------------------------------
@@ -251,25 +255,35 @@ class PSFFitter():
             qfit_med = float(np.nanmedian(new_result['qfit']))
             scores[float(candidate)] = cfit_med + qfit_med
 
-        # --- decide the new blur -----------------------------------------
+        # --- fit a quadratic + decide the new blur ----------------------
         improvement_tol = config['psf'].get('psf_blur_improvement_tol', 0.05)
-        current_key = next(
-            (b for b in scores if np.isclose(b, current_blur, rtol=1e-6)),
-            None,
-        )
-        current_score = (scores[current_key] if current_key is not None
-                         else max(v for v in scores.values() if np.isfinite(v)))
-        grid_best_score = min(scores.values())
-        grid_best_blur = min(
-            (b for b, s in scores.items() if s == grid_best_score),
-            key=lambda b: abs(b - current_blur),
-        )
+        items = sorted(scores.items())
+        xs = np.array([x for x, _ in items], dtype=float)
+        ys = np.array([y for _, y in items], dtype=float)
+        finite = np.isfinite(ys)
+        xs, ys = xs[finite], ys[finite]
 
-        if grid_best_score < current_score * (1 - improvement_tol):
-            # Grid suggests a real improvement; try parabolic refinement.
-            new_blur = self._parabolic_vertex(scores, current_blur)
-            if new_blur is None:
-                new_blur = grid_best_blur
+        coeffs, vertex = self._quadratic_fit(xs, ys)
+        if coeffs is not None:
+            score_at_current = float(np.polyval(coeffs, current_blur))
+        elif len(ys) > 0:
+            # Fall back to closest grid point's score if quadratic fit failed.
+            closest = int(np.argmin(np.abs(xs - current_blur)))
+            score_at_current = float(ys[closest])
+        else:
+            score_at_current = np.inf
+
+        if len(ys) > 0:
+            grid_best_score = float(np.min(ys))
+            grid_best_blur = float(xs[int(np.argmin(ys))])
+        else:
+            grid_best_score = np.inf
+            grid_best_blur = float(current_blur)
+
+        if grid_best_score < score_at_current * (1 - improvement_tol):
+            # The measured grid minimum beats current by the tolerance --
+            # commit to the parabolic vertex if available, else grid min.
+            new_blur = vertex if vertex is not None else grid_best_blur
         else:
             new_blur = float(current_blur)
 
@@ -295,28 +309,30 @@ class PSFFitter():
         return new_blur
 
     @staticmethod
-    def _parabolic_vertex(scores, current_blur):
-        ''' Return the parabolic-fit vertex x-coordinate for 3 equally-spaced
-        (x, score) samples in `scores`, or None if the fit cannot refine
-        past the raw grid minimum (non-convex, vertex outside bracket, or
-        fewer than 3 samples).
+    def _quadratic_fit(xs, ys):
+        ''' Fit y = a x^2 + b x + c through `(xs, ys)` and return
+        (coeffs, vertex_x) where coeffs is the np.polyfit result
+        ``[a, b, c]`` and vertex_x = -b/(2a) clipped to within the
+        bracket. Either may be None:
+
+        * coeffs is None when fewer than 3 finite points are available.
+        * vertex_x is None when the quadratic isn't strictly convex
+          (a <= 0) or the vertex falls outside [xs.min(), xs.max()].
+
+        With 3 points polyfit returns the unique exact parabola; with
+        4+ points it returns the least-squares fit, averaging out noise
+        in the score metric.
         '''
-        items = sorted(scores.items())
-        if len(items) != 3:
-            return None
-        (x1, y1), (x2, y2), (x3, y3) = items
-        # Require equal spacing (tolerant to float roundoff).
-        h1 = x2 - x1
-        h2 = x3 - x2
-        if not (h1 > 0 and h2 > 0 and np.isclose(h1, h2, rtol=1e-3)):
-            return None
-        curvature = (y1 - 2.0 * y2 + y3)
-        if curvature <= 0:
-            return None  # concave / flat -- no minimum inside the bracket
-        vertex = x2 + h1 * (y1 - y3) / (2.0 * curvature)
-        if vertex < x1 or vertex > x3:
-            return None
-        return float(vertex)
+        if len(xs) < 3:
+            return None, None
+        coeffs = np.polyfit(xs, ys, 2)
+        a, b, _c = coeffs
+        if a <= 0:
+            return coeffs, None  # fit is fine, but no convex minimum
+        vertex = float(-b / (2.0 * a))
+        if vertex < xs.min() or vertex > xs.max():
+            return coeffs, None
+        return coeffs, vertex
 
     def fit(self,fit_to='sersic_residual',**kwargs):
         ''' Perform PSF fitting.
