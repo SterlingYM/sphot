@@ -24,8 +24,8 @@ mainloop_min_iter = 2
 [psf]
 # iterative fit settings
 th_min = 1
-th_max = 10
-th_iter = 10 # N_iteration between min and max
+th_max = 5
+th_iter = 5 # N_iteration between min and max
 # Early-stop the threshold sweep after this many consecutive thresholds add
 # no new sources. Set very high to disable.
 th_max_consec_empty = 3
@@ -38,6 +38,13 @@ bkg_refit_per_iteration = true
 # Prevents thresholds from collapsing if the residual happens to look very
 # clean over a small box (e.g. one well-fit bright source).
 bkg_floor_factor = 0.3
+# After the threshold ladder finishes, refit ALL quality-passing sources
+# simultaneously on the original background-subtracted data, with
+# init_params from the ladder. Rebalances fluxes for blended pairs that
+# were fit in different ladder passes.
+final_joint_refit = true
+# How far positions are allowed to move during the joint refit (px).
+final_refit_xy_bounds = 0.5
 mask_aper_size_in_r_eff = 3.5
 raise_error = false
 residual_clip_sigma = 15.0 # keep this high to avoid over-masking

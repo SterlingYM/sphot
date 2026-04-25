@@ -802,7 +802,97 @@ def iterative_psf_fitting(data,psf_model,psf_sigma,
     if progress is not None:
         progress.remove_task(progress_psf)
 
+    # Final simultaneous refit: rebalance fluxes for sources that were fit
+    # sequentially in the ladder. Source A fit at th=5 before its dim
+    # blended neighbour B was detected at th=1.5 has A's flux inflated by
+    # B's signal; the ladder never goes back to correct it. A simultaneous
+    # fit at fixed positions (or with a small xy_bound) puts A and B in the
+    # same group and lets the LM solver split the flux properly.
+    if (config['psf'].get('final_joint_refit', True)
+            and phot_result is not None
+            and len(phot_result) > 0):
+        try:
+            new_phot, new_resid = _final_joint_refit(
+                data_bksub, data_error, bkg_std,
+                psf_model, psf_sigma, phot_result,
+                progress=progress,
+                **{k: v for k, v in kwargs.items() if k != 'progress'},
+            )
+            if new_phot is not None and new_resid is not None:
+                phot_result = new_phot
+                resid = new_resid
+        except Exception as e:
+            if config['psf']['raise_error']:
+                raise
+            logger.warning(f'final joint refit failed: {e}')
+
     # make the residual image without background subtraction
     psf_modelimg_all = data_bksub - resid
     resid_all = data.copy() - psf_modelimg_all.copy()
     return phot_result, resid_all
+
+
+def _final_joint_refit(data_bksub, data_error, bkg_std,
+                       psf_model, psf_sigma, phot_result,
+                       progress=None, **kwargs):
+    ''' Refit all (quality-passing) sources from the ladder simultaneously
+    on the original background-subtracted data, with init_params from the
+    accumulated phot_result. xy_bounds (default 0.5 px) lets positions
+    refine slightly but not run away.
+
+    Returns (new_phot_result, new_residual_image), or (None, None) if no
+    sources remain after quality filtering or the refit fails.
+    '''
+    center_mask_params = kwargs.get('center_mask_params', None)
+    s_pass, _ = filter_psfphot_results(
+        phot_result, center_mask_params=center_mask_params,
+        bkg_std=bkg_std)
+    if int(s_pass.sum()) == 0:
+        return None, None
+
+    init_params = QTable()
+    init_params['x'] = phot_result['x_fit'][s_pass]
+    init_params['y'] = phot_result['y_fit'][s_pass]
+    init_params['flux'] = phot_result['flux_fit'][s_pass]
+
+    grouper = SourceGrouper(
+        min_separation=config['psf']['grouper_separation_in_psfsigma'] * psf_sigma)
+    localbkg = LocalBackground(
+        config['psf']['localbkg_bounds_in_psfsigma'][0] * psf_sigma,
+        config['psf']['localbkg_bounds_in_psfsigma'][1] * psf_sigma,
+        MMMBackground())
+
+    xy_bound = float(config['psf'].get('final_refit_xy_bounds', 0.5))
+    group_warn = int(config['psf'].get(
+        'final_refit_group_warning_threshold', 10000))
+
+    psfphot = PSFPhotometry(
+        psf_model,
+        fit_shape       = config['psf']['PSFPhotometry_fit_shape'],
+        finder          = None,
+        grouper         = grouper,
+        local_bkg_estimator = localbkg,
+        aperture_radius = config['psf']['PSFPhotometry_aperture_radius'],
+        fitter_maxiters = config['psf']['PSFPhotometry_fitter_maxiters'],
+        xy_bounds       = xy_bound if xy_bound > 0 else 0.0,
+        group_warning_threshold = group_warn,
+    )
+
+    if progress is not None:
+        task = progress.add_task(
+            f'final joint refit ({int(s_pass.sum())} sources)', total=1)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        new_phot = psfphot(data_bksub, error=data_error,
+                           init_params=init_params)
+
+    if progress is not None:
+        progress.update(task, advance=1, refresh=True)
+        progress.remove_task(task)
+
+    if new_phot is None or len(new_phot) == 0:
+        return None, None
+
+    new_resid = psfphot.make_residual_image(data_bksub)
+    return new_phot, new_resid

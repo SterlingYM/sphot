@@ -38,6 +38,16 @@ bkg_refit_per_iteration = true
 # Prevents thresholds from collapsing if the residual happens to look very
 # clean over a small box (e.g. one well-fit bright source).
 bkg_floor_factor = 0.3
+# After the threshold ladder finishes, refit ALL quality-passing sources
+# simultaneously on the original background-subtracted data, with
+# init_params from the ladder. Rebalances fluxes for blended pairs that
+# were fit in different ladder passes (the bright one's flux ate into its
+# dim neighbour before the dim neighbour was detected).
+final_joint_refit = true
+# How far positions are allowed to move during the joint refit (px). 0.0
+# fixes positions exactly; 0.5 lets the fitter recenter slightly without
+# letting sources run away.
+final_refit_xy_bounds = 0.5
 mask_aper_size_in_r_eff = 3.5
 raise_error = false
 residual_clip_sigma = 15.0 # keep this high to avoid over-masking
