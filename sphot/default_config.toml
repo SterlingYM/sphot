@@ -38,16 +38,77 @@ bkg_refit_per_iteration = true
 # Prevents thresholds from collapsing if the residual happens to look very
 # clean over a small box (e.g. one well-fit bright source).
 bkg_floor_factor = 0.3
-# After the threshold ladder finishes, refit ALL quality-passing sources
-# simultaneously on the original background-subtracted data, with
-# init_params from the ladder. Rebalances fluxes for blended pairs that
-# were fit in different ladder passes (the bright one's flux ate into its
-# dim neighbour before the dim neighbour was detected).
+# After the threshold ladder finishes, run a final refit. Two methods
+# are available; pick via `final_refit_method`:
+#
+#   'iterative'   -- iterative LM refit + leftover-source detection
+#                    (the legacy mode). Knobs: final_joint_refit (bool
+#                    on/off), final_refit_xy_bounds, final_refit_iterations,
+#                    final_refit_detect_th, final_refit_dedup_psfsigma,
+#                    final_refit_residual_tol,
+#                    final_refit_catastrophic_flux_factor,
+#                    final_refit_fit_shape.
+#
+#   'perbin_nnls' -- bin sources by flux into a few flux percentiles,
+#                    calibrate a per-bin extra blur, then solve all
+#                    fluxes jointly via non-negative least squares with
+#                    positions pinned. Deterministic, no negative-flux
+#                    outputs, runs in seconds. Knobs:
+#                    perbin_flux_percentiles, perbin_extra_blurs.
+#                    Origin: tests/psf_experiments/proto_08.
+#
+#   'none'        -- skip the final refit entirely.
+final_refit_method = 'iterative'
+
+# === iterative (legacy) refit knobs ===
+# Iterative joint refit: each pass refits all quality-passing sources
+# simultaneously (positions pinned by xy_bounds=0 by default; grouper
+# handles blends), then detects leftover positive peaks in the residual,
+# adds them deduplicated against existing sources, and refits. Stops
+# when residual MAD stops improving or `final_refit_iterations` is
+# reached. Pinning positions prevents bright stars from drifting into
+# dim neighbours and stealing flux; re-detection ensures dim neighbours
+# that the brights would have absorbed get their own model.
 final_joint_refit = true
-# How far positions are allowed to move during the joint refit (px). 0.0
-# fixes positions exactly; 0.5 lets the fitter recenter slightly without
-# letting sources run away.
-final_refit_xy_bounds = 0.5
+# How far positions are allowed to move during the joint refit (px). 0
+# pins positions exactly. Use a small positive value (e.g. 0.3) only if
+# you trust the input positions less than the joint-fit centroiding.
+final_refit_xy_bounds = 0.0
+# Maximum joint-refit iterations.
+final_refit_iterations = 5
+# Threshold for leftover-source detection in the residual, in units of
+# the *current* residual MAD (re-estimated after each refit).
+final_refit_detect_th = 4.0
+# A new detection within (this * psf_sigma) of an existing source -- or
+# of another new detection in the same iteration -- is treated as a
+# duplicate and dropped. Should be >= grouper_separation_in_psfsigma so
+# we never inject a source into the grouper's same-group radius.
+final_refit_dedup_psfsigma = 2.0
+# Stop iterating when the fractional drop in residual MAD between two
+# consecutive iterations falls below this. Set to 0 to always run all
+# `final_refit_iterations`.
+final_refit_residual_tol = 0.01
+# Drop fits whose absolute flux exceeds this multiple of the
+# median(|flux|) before the next iteration. Catches degenerate
+# compensating-pair solutions that the grouper sometimes finds.
+final_refit_catastrophic_flux_factor = 20.0
+# === perbin_nnls refit knobs ===
+# Flux percentiles used to split sources into bins. Length N gives N+1
+# bins (default [33, 67] => 3 bins: dim / mid / bright).
+perbin_flux_percentiles = [33.0, 67.0]
+# Candidate extra-blur sigmas to scan per bin (oversampled-PSF px,
+# applied on top of PSFFitter's chosen blur). Each bin picks the value
+# that minimises the median local-residual MAD over its own sources.
+# Bright-end bins typically prefer extra=0 because PSFFitter calibrates
+# blur on the bulk; dim bins often prefer +1 or +2 px.
+perbin_extra_blurs = [0.0, 1.0, 2.0, 3.0, 4.0]
+
+# fit_shape (in pixels) used by the joint refit only. Wider than the
+# ladder's PSFPhotometry_fit_shape because positions are pinned, the
+# LM only has to solve for fluxes, and a wider window constrains the
+# PSF wings -- which is what reduces the dipole structure (residual
+# peak / over-subtraction dip) around bright stars in crowded fields.
+final_refit_fit_shape = [11, 11]
 mask_aper_size_in_r_eff = 3.5
 raise_error = false
 residual_clip_sigma = 15.0 # keep this high to avoid over-masking

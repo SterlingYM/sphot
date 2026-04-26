@@ -802,17 +802,36 @@ def iterative_psf_fitting(data,psf_model,psf_sigma,
     if progress is not None:
         progress.remove_task(progress_psf)
 
-    # Final simultaneous refit: rebalance fluxes for sources that were fit
-    # sequentially in the ladder. Source A fit at th=5 before its dim
-    # blended neighbour B was detected at th=1.5 has A's flux inflated by
-    # B's signal; the ladder never goes back to correct it. A simultaneous
-    # fit at fixed positions (or with a small xy_bound) puts A and B in the
-    # same group and lets the LM solver split the flux properly.
-    if (config['psf'].get('final_joint_refit', True)
-            and phot_result is not None
-            and len(phot_result) > 0):
+    # Final refit step. Two modes are available, picked by
+    # `final_refit_method`:
+    #   'iterative'    -- _final_joint_refit: iterative LM refit + leftover
+    #                     detection. Honours the legacy `final_joint_refit`
+    #                     bool for back-compat (false => skip the refit).
+    #   'perbin_nnls'  -- _final_perbin_nnls_refit: bin sources by flux,
+    #                     calibrate a per-bin extra blur, build a global
+    #                     non-negative least-squares system and solve once.
+    #                     Deterministic, no negative-flux outputs, runs in
+    #                     a few seconds.
+    #   'none'         -- skip the final refit entirely; ladder output is
+    #                     returned as-is.
+    method = str(config['psf'].get('final_refit_method', 'iterative')).lower()
+    refit_func = None
+    if phot_result is not None and len(phot_result) > 0:
+        if method == 'perbin_nnls':
+            refit_func = _final_perbin_nnls_refit
+        elif method == 'iterative':
+            if config['psf'].get('final_joint_refit', True):
+                refit_func = _final_joint_refit
+        elif method == 'none':
+            refit_func = None
+        else:
+            logger.warning(f'unknown final_refit_method={method!r}; '
+                           f'falling back to iterative')
+            if config['psf'].get('final_joint_refit', True):
+                refit_func = _final_joint_refit
+    if refit_func is not None:
         try:
-            new_phot, new_resid = _final_joint_refit(
+            new_phot, new_resid = refit_func(
                 data_bksub, data_error, bkg_std,
                 psf_model, psf_sigma, phot_result,
                 progress=progress,
@@ -824,7 +843,7 @@ def iterative_psf_fitting(data,psf_model,psf_sigma,
         except Exception as e:
             if config['psf']['raise_error']:
                 raise
-            logger.warning(f'final joint refit failed: {e}')
+            logger.warning(f'final refit ({method}) failed: {e}')
 
     # make the residual image without background subtraction
     psf_modelimg_all = data_bksub - resid
@@ -835,10 +854,30 @@ def iterative_psf_fitting(data,psf_model,psf_sigma,
 def _final_joint_refit(data_bksub, data_error, bkg_std,
                        psf_model, psf_sigma, phot_result,
                        progress=None, **kwargs):
-    ''' Refit all (quality-passing) sources from the ladder simultaneously
-    on the original background-subtracted data, with init_params from the
-    accumulated phot_result. xy_bounds (default 0.5 px) lets positions
-    refine slightly but not run away.
+    ''' Iterative joint refit + leftover-source detection.
+
+    Each iteration:
+        1. Refit all current sources simultaneously (positions pinned by
+           default via xy_bounds=0) on the original background-subtracted
+           data. The grouper splits dense regions into independent LM
+           subproblems.
+        2. Detect leftover sources in the residual at
+           ``final_refit_detect_th * MAD(resid)`` -- only POSITIVE peaks,
+           so bright stars that have absorbed too much flux (negative
+           central dip) cannot be re-added as new sources.
+        3. Deduplicate detections against the existing init list (anything
+           closer than ``min_separation_psfsigma * psf_sigma`` to an
+           existing source is dropped) and append the new ones.
+        4. Stop when no new sources are added, when the residual MAD stops
+           dropping by more than ``residual_improvement_tol``, or after
+           ``final_refit_iterations`` iterations.
+
+    Pinning positions (xy_bounds=0 by default) prevents bright stars from
+    drifting toward dim neighbours and stealing their flux (= central
+    over-subtraction in the previous design). The iterative re-detection
+    then ensures the dim neighbours that the brights *used to* absorb get
+    their own model, so the residual doesn't have positive blobs next to
+    the brights either.
 
     Returns (new_phot_result, new_residual_image), or (None, None) if no
     sources remain after quality filtering or the refit fails.
@@ -850,10 +889,10 @@ def _final_joint_refit(data_bksub, data_error, bkg_std,
     if int(s_pass.sum()) == 0:
         return None, None
 
-    init_params = QTable()
-    init_params['x'] = phot_result['x_fit'][s_pass]
-    init_params['y'] = phot_result['y_fit'][s_pass]
-    init_params['flux'] = phot_result['flux_fit'][s_pass]
+    init = QTable()
+    init['x'] = np.asarray(phot_result['x_fit'][s_pass], dtype=float)
+    init['y'] = np.asarray(phot_result['y_fit'][s_pass], dtype=float)
+    init['flux'] = np.asarray(phot_result['flux_fit'][s_pass], dtype=float)
 
     grouper = SourceGrouper(
         min_separation=config['psf']['grouper_separation_in_psfsigma'] * psf_sigma)
@@ -862,37 +901,404 @@ def _final_joint_refit(data_bksub, data_error, bkg_std,
         config['psf']['localbkg_bounds_in_psfsigma'][1] * psf_sigma,
         MMMBackground())
 
-    xy_bound = float(config['psf'].get('final_refit_xy_bounds', 0.5))
+    xy_bound = float(config['psf'].get('final_refit_xy_bounds', 0.0))
+    n_iter = int(config['psf'].get('final_refit_iterations', 5))
+    detect_th = float(config['psf'].get('final_refit_detect_th', 3.0))
+    dedup_psfsigma = float(config['psf'].get(
+        'final_refit_dedup_psfsigma', 1.5))
+    resid_tol = float(config['psf'].get(
+        'final_refit_residual_tol', 0.01))
     group_warn = int(config['psf'].get(
         'final_refit_group_warning_threshold', 10000))
 
+    # photutils v3 PSFPhotometry requires xy_bounds to be strictly positive
+    # (it does not accept 0 or None as "fixed"). Substitute a tiny positive
+    # value when the user has asked for pinned positions.
+    # The ladder uses a small fit_shape ([3,3] by default) so that crowded
+    # groups don't blow up; the joint refit can afford a wider window
+    # because positions are pinned and the LM only has to solve for fluxes.
+    refit_fit_shape = config['psf'].get(
+        'final_refit_fit_shape',
+        config['psf']['PSFPhotometry_fit_shape'])
     psfphot = PSFPhotometry(
         psf_model,
-        fit_shape       = config['psf']['PSFPhotometry_fit_shape'],
+        fit_shape       = refit_fit_shape,
         finder          = None,
         grouper         = grouper,
         local_bkg_estimator = localbkg,
         aperture_radius = config['psf']['PSFPhotometry_aperture_radius'],
         fitter_maxiters = config['psf']['PSFPhotometry_fitter_maxiters'],
-        xy_bounds       = xy_bound if xy_bound > 0 else 0.0,
+        xy_bounds       = max(xy_bound, 1e-6),
         group_warning_threshold = group_warn,
     )
 
+    finder_kwargs = config['psf']['finder_kwargs']
+    bkgrms_estimator = MADStdBackgroundRMS()
+
+    new_phot = None
+    new_resid = data_bksub.copy()
+    prev_mad = float('inf')
+    dedup_r2 = (dedup_psfsigma * psf_sigma) ** 2
+    catastrophic_factor = float(config['psf'].get(
+        'final_refit_catastrophic_flux_factor', 20.0))
+
     if progress is not None:
         task = progress.add_task(
-            f'final joint refit ({int(s_pass.sum())} sources)', total=1)
+            f'final joint refit ({len(init)} sources)', total=n_iter)
 
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore')
-        new_phot = psfphot(data_bksub, error=data_error,
-                           init_params=init_params)
+    for it in range(n_iter):
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                new_phot = psfphot(data_bksub, error=data_error,
+                                   init_params=init)
+            new_resid = psfphot.make_residual_image(data_bksub)
+        except Exception as e:
+            logger.warning(f'joint refit iter {it} failed: {e}')
+            break
+
+        if new_phot is None or len(new_phot) == 0:
+            break
+
+        # Drop catastrophic-flux fits before the next iteration. When two
+        # sources sit close enough that the grouper bundles them, the LM
+        # can find degenerate solutions where one has +1e7 flux and the
+        # other -1e7 (they cancel locally but pollute the catalogue and
+        # destabilise subsequent iterations).
+        flux_arr = np.asarray(new_phot['flux_fit'], dtype=float)
+        finite = np.isfinite(flux_arr)
+        if finite.any():
+            scale = float(np.nanmedian(np.abs(flux_arr[finite])))
+            scale = max(scale, 1.0)
+            keep = (np.abs(flux_arr) <= catastrophic_factor * scale) & finite
+            if keep.sum() < len(flux_arr):
+                logger.debug(f'joint refit iter {it}: dropping '
+                             f'{int((~keep).sum())} catastrophic fits')
+                init = init[keep]
+                # If we just dropped, redo this iteration's fit on the
+                # cleaned init list before trying to detect leftovers.
+                continue
+
+        # Detect leftover positive peaks in the residual at the current
+        # noise level. Only positive => over-subtracted (negative) regions
+        # don't generate spurious additions.
+        try:
+            resid_mad = float(bkgrms_estimator(new_resid))
+        except Exception:
+            resid_mad = bkg_std
+
+        if progress is not None:
+            progress.update(task, description=(
+                f'final joint refit (it={it+1}, N={len(init)}, '
+                f'resid_MAD={resid_mad:.4f})'))
+            progress.update(task, advance=1, refresh=True)
+
+        # Stop if the residual stopped improving meaningfully.
+        if prev_mad - resid_mad < resid_tol * prev_mad:
+            break
+        prev_mad = resid_mad
+
+        try:
+            finder = DAOStarFinder(
+                threshold=detect_th * resid_mad,
+                fwhm=psf_sigma * 2.33,
+                **finder_kwargs)
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                leftover = finder(new_resid)
+        except Exception:
+            leftover = None
+
+        if leftover is None or len(leftover) == 0:
+            break
+
+        new_x = np.asarray(leftover['x_centroid'], dtype=float)
+        new_y = np.asarray(leftover['y_centroid'], dtype=float)
+        # `flux` from DAOStarFinder is a rough integrated estimate that's
+        # good enough as an LM starting point.
+        new_flux = np.asarray(leftover['flux'], dtype=float)
+
+        # Stage 1: dedupe against existing init.
+        if len(init) > 0:
+            ex_x = np.asarray(init['x'])
+            ex_y = np.asarray(init['y'])
+            dx = new_x[:, None] - ex_x[None, :]
+            dy = new_y[:, None] - ex_y[None, :]
+            min_dist2 = (dx * dx + dy * dy).min(axis=1)
+            is_new = min_dist2 > dedup_r2
+        else:
+            is_new = np.ones(len(new_x), dtype=bool)
+
+        # Stage 2: dedupe new detections against EACH OTHER. Without this,
+        # a single faint feature can produce 2-3 DAO candidates within a
+        # pixel of each other, all pass the existing-init dedup, and end
+        # up bundled into one group with degenerate ±huge fluxes.
+        keep_idx = []
+        for j in np.where(is_new)[0]:
+            ok = True
+            for k in keep_idx:
+                if (new_x[j] - new_x[k])**2 + (new_y[j] - new_y[k])**2 <= dedup_r2:
+                    ok = False
+                    break
+            if ok:
+                keep_idx.append(int(j))
+
+        if not keep_idx:
+            break
+
+        added = QTable()
+        added['x'] = new_x[keep_idx]
+        added['y'] = new_y[keep_idx]
+        added['flux'] = new_flux[keep_idx]
+        init = vstack([init, added])
+
+    if progress is not None:
+        progress.remove_task(task)
+
+    if new_phot is None or len(new_phot) == 0:
+        return None, None
+    return new_phot, new_resid
+
+
+# ---------------------------------------------------------------------------
+# Per-bin NNLS final refit
+# ---------------------------------------------------------------------------
+
+def _render_unit_image(psf_model, x, y, flux, shape, render_shape):
+    ''' Render a sum of point-source images at the given (x, y) positions
+    with the given fluxes, using a single ImagePSF model.
+    '''
+    if len(x) == 0:
+        return np.zeros(shape)
+    params = QTable()
+    params['x_0'] = np.asarray(x, dtype=float)
+    params['y_0'] = np.asarray(y, dtype=float)
+    params['flux'] = np.asarray(flux, dtype=float)
+    return _make_model_image(
+        shape=shape, model=psf_model,
+        params_table=params,
+        model_shape=tuple(render_shape),
+        x_name='x_0', y_name='y_0',
+    )
+
+
+def _local_residual_mad(residual, x, y, half=8):
+    ''' Median over the listed sources of the MAD of a (2*half+1)^2 cutout
+    centred on each. Used as the per-bin blur calibration score.
+    '''
+    vals = []
+    for xi, yi in zip(x, y):
+        ix = int(round(float(xi))); iy = int(round(float(yi)))
+        sy = slice(max(0, iy - half), iy + half + 1)
+        sx = slice(max(0, ix - half), ix + half + 1)
+        cut = residual[sy, sx]
+        cut = cut[np.isfinite(cut)]
+        if cut.size == 0:
+            continue
+        vals.append(float(np.median(np.abs(cut - np.median(cut)))))
+    return float(np.median(vals)) if vals else float('inf')
+
+
+def _final_perbin_nnls_refit(data_bksub, data_error, bkg_std,
+                             psf_model, psf_sigma, phot_result,
+                             progress=None, **kwargs):
+    ''' Final refit by per-bin extra-blur + non-negative least squares.
+
+    Origin: tests/psf_experiments/proto_08_brightness_dependent_blur.
+
+    Idea
+    ----
+    1. Take the ladder's quality-passing sources as the input list
+       (positions pinned).
+    2. Bin sources by initial flux (default: 3 bins from
+       `perbin_flux_percentiles`).
+    3. For each bin, render OTHER bins' contribution with the central
+       PSF, then scan a small set of "extra blur" sigmas (in oversampled
+       PSF px units) on top of the current PSF and pick the one that
+       minimises the median local residual MAD over that bin's sources.
+    4. Build a global non-negative least-squares system in which each
+       column is a unit-flux PSF rendered at one source's position with
+       its bin's chosen extra-blur. Solve with `scipy.optimize.nnls` via
+       the Cholesky-Gram form (much faster than the full tall system).
+    5. The solver inherently produces flux >= 0, so the catastrophic
+       compensating-pair LM solutions that plagued the iterative refit
+       cannot occur.
+
+    The "extra blur" parametrisation only ADDS blur on top of the
+    current `psf_model`. That's intentional: the existing per-call
+    blur calibration in PSFFitter has already chosen the best single
+    blur (which usually fits the dim end well); extra blur for the
+    bright bin lets bright stars use a slightly wider effective PSF
+    where saturation broadening or scattered-light wings exceed what
+    the global blur captures.
+
+    Returns (new_phot_result, new_residual_image) on success, or
+    (None, None) if no quality-passing sources exist or if the NNLS
+    solve fails.
+    '''
+    from astropy.convolution import convolve, Gaussian2DKernel
+    from scipy.optimize import nnls
+
+    if phot_result is None or len(phot_result) == 0:
+        return None, None
+
+    # 1. quality filter
+    center_mask_params = kwargs.get('center_mask_params', None)
+    s_pass, _ = filter_psfphot_results(
+        phot_result, center_mask_params=center_mask_params,
+        bkg_std=bkg_std)
+    if int(s_pass.sum()) == 0:
+        return None, None
+
+    x_all = np.asarray(phot_result['x_fit'][s_pass], dtype=float)
+    y_all = np.asarray(phot_result['y_fit'][s_pass], dtype=float)
+    f_all = np.asarray(phot_result['flux_fit'][s_pass], dtype=float)
+    n_total = len(x_all)
+
+    # 2. bin by flux percentile (portable across datasets)
+    pct = list(config['psf'].get('perbin_flux_percentiles', [33.0, 67.0]))
+    pos_flux = f_all[f_all > 0]
+    if len(pos_flux) >= len(pct) + 1:
+        edges = np.percentile(pos_flux, pct)
+    else:
+        edges = np.array([])  # 1 bin only
+    bin_idx = np.zeros(n_total, dtype=int)
+    for e in edges:
+        bin_idx += (f_all > e).astype(int)
+    n_bins = len(edges) + 1
+
+    # 3. extract base PSF (already at the best blur from PSFFitter
+    # calibration) and oversample factor from the model
+    base_psf_img = np.asarray(psf_model.data, dtype=float)
+    psf_oversample = int(np.atleast_1d(psf_model.oversampling)[0])
+
+    # candidate extra-blur sigmas (oversampled-PSF px)
+    extra_blurs = list(config['psf'].get(
+        'perbin_extra_blurs', [0.0, 1.0, 2.0, 3.0, 4.0]))
+
+    # render shape (data px), reuse the same as the threshold ladder
+    render_shape = tuple(config['psf']['modelimg_render_shape'])
+
+    if progress is not None:
+        task = progress.add_task(
+            f'final per-bin NNLS refit (N={n_total}, bins={n_bins})',
+            total=n_bins + 2)
+
+    # build candidate PSF models keyed by extra_sigma
+    psf_models_by_blur = {}
+    for s in extra_blurs:
+        s = float(s)
+        if s == 0.0:
+            img = base_psf_img.copy()
+        else:
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                img = convolve(base_psf_img, Gaussian2DKernel(s))
+        if img.sum() > 0:
+            img = img / float(img.sum())
+        psf_models_by_blur[s] = ImagePSF(img, flux=1.0,
+                                         oversampling=psf_oversample,
+                                         fill_value=0.0)
+
+    # 4. per-bin blur calibration
+    bin_best_extra = {}
+    for bi in range(n_bins):
+        sel = (bin_idx == bi)
+        n = int(sel.sum())
+        if n < 2:
+            bin_best_extra[bi] = 0.0
+            if progress is not None:
+                progress.update(task, advance=1, refresh=True)
+            continue
+        # other bins rendered once with the central (extra=0) PSF
+        other_sel = ~sel
+        other_img = _render_unit_image(
+            psf_models_by_blur[0.0],
+            x_all[other_sel], y_all[other_sel], f_all[other_sel],
+            data_bksub.shape, render_shape)
+        data_minus_other = data_bksub - other_img
+        scores = {}
+        for s in extra_blurs:
+            this_img = _render_unit_image(
+                psf_models_by_blur[float(s)],
+                x_all[sel], y_all[sel], f_all[sel],
+                data_bksub.shape, render_shape)
+            scores[float(s)] = _local_residual_mad(
+                data_minus_other - this_img,
+                x_all[sel], y_all[sel], half=8)
+        bin_best_extra[bi] = min(scores, key=scores.get)
+        if progress is not None:
+            progress.update(task, advance=1, refresh=True)
+
+    # 5. build NNLS design matrix (one column per source)
+    H, W = data_bksub.shape
+    cols = np.zeros((H * W, n_total), dtype=np.float32)
+    for i in range(n_total):
+        s = bin_best_extra[bin_idx[i]]
+        single = _render_unit_image(
+            psf_models_by_blur[s], [x_all[i]], [y_all[i]], [1.0],
+            data_bksub.shape, render_shape)
+        cols[:, i] = single.ravel().astype(np.float32)
+    if progress is not None:
+        progress.update(task, advance=1, refresh=True)
+
+    # NNLS via Gram + Cholesky (much faster than the full M x N system)
+    b = data_bksub.ravel().astype(np.float32)
+    finite = np.isfinite(b)
+    if (~finite).any():
+        b = np.where(finite, b, 0.0)
+        cols[~finite, :] = 0.0
+    G = (cols.T @ cols).astype(np.float64)
+    rhs = (cols.T @ b).astype(np.float64)
+    if not (np.all(np.isfinite(G)) and np.all(np.isfinite(rhs))):
+        logger.warning('per-bin NNLS: Gram/rhs has non-finite entries; '
+                       'aborting refit')
+        if progress is not None:
+            progress.remove_task(task)
+        return None, None
+    try:
+        L = np.linalg.cholesky(G + 1e-6 * np.eye(G.shape[0]))
+        Linv_rhs = np.linalg.solve(L, rhs)
+        flux_fit, _ = nnls(L.T, Linv_rhs, maxiter=10000)
+    except (np.linalg.LinAlgError, RuntimeError):
+        try:
+            flux_fit, _ = nnls(cols.astype(np.float64),
+                               b.astype(np.float64), maxiter=20000)
+        except Exception as e:
+            logger.warning(f'per-bin NNLS solve failed: {e}')
+            if progress is not None:
+                progress.remove_task(task)
+            return None, None
+
+    # 6. build final model image with refit fluxes per bin
+    model = np.zeros_like(data_bksub, dtype=float)
+    for bi in range(n_bins):
+        sel = (bin_idx == bi)
+        if int(sel.sum()) == 0:
+            continue
+        s = bin_best_extra[bi]
+        sub = _render_unit_image(
+            psf_models_by_blur[s], x_all[sel], y_all[sel], flux_fit[sel],
+            data_bksub.shape, render_shape)
+        model += sub
+    new_resid = data_bksub - model
 
     if progress is not None:
         progress.update(task, advance=1, refresh=True)
         progress.remove_task(task)
 
-    if new_phot is None or len(new_phot) == 0:
-        return None, None
+    # 7. produce a phot_result with the refit fluxes; copy the original
+    # quality-passing rows so downstream code (save, aperture phot) sees
+    # all the columns it expects.
+    new_phot = phot_result[s_pass].copy()
+    new_phot['flux_fit'] = flux_fit
+    # flag negative-flux entries as 0 since NNLS guarantees >= 0;
+    # preserve other columns (cfit, qfit, flags, ...) as-is from the
+    # ladder fit -- they describe the LM solve, which is the only
+    # quality info we have for these sources.
 
-    new_resid = psfphot.make_residual_image(data_bksub)
+    bin_best_str = ', '.join(f'b{bi}:Δσ={bin_best_extra[bi]:.1f}'
+                             for bi in range(n_bins))
+    logger.info(f'per-bin NNLS refit: {n_total} sources in {n_bins} bins '
+                f'({bin_best_str})')
     return new_phot, new_resid

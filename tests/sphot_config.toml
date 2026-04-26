@@ -24,8 +24,8 @@ mainloop_min_iter = 2
 [psf]
 # iterative fit settings
 th_min = 1
-th_max = 5
-th_iter = 5 # N_iteration between min and max
+th_max = 30
+th_iter = 10 # N_iteration between min and max
 # Early-stop the threshold sweep after this many consecutive thresholds add
 # no new sources. Set very high to disable.
 th_max_consec_empty = 3
@@ -38,13 +38,25 @@ bkg_refit_per_iteration = true
 # Prevents thresholds from collapsing if the residual happens to look very
 # clean over a small box (e.g. one well-fit bright source).
 bkg_floor_factor = 0.3
-# After the threshold ladder finishes, refit ALL quality-passing sources
-# simultaneously on the original background-subtracted data, with
-# init_params from the ladder. Rebalances fluxes for blended pairs that
-# were fit in different ladder passes.
+# Final refit method. 'iterative' (legacy LM + leftover-detection) or
+# 'perbin_nnls' (per-bin extra-blur + non-negative least-squares).
+# 'perbin_nnls' was selected from the proto_08 experiment: lower MAD,
+# no negative-flux outputs, deterministic, runs in seconds.
+final_refit_method = 'perbin_nnls'
+
+# --- perbin_nnls knobs ---
+perbin_flux_percentiles = [33.0, 67.0]      # 3 bins: dim / mid / bright
+perbin_extra_blurs = [0.0, 1.0, 2.0, 3.0, 4.0]
+
+# --- iterative (legacy) knobs (still honoured if final_refit_method='iterative') ---
 final_joint_refit = true
-# How far positions are allowed to move during the joint refit (px).
-final_refit_xy_bounds = 0.5
+final_refit_xy_bounds = 0.0
+final_refit_iterations = 5
+final_refit_detect_th = 4.0
+final_refit_dedup_psfsigma = 2.0
+final_refit_residual_tol = 0.01
+final_refit_catastrophic_flux_factor = 20.0
+final_refit_fit_shape = [11, 11]
 mask_aper_size_in_r_eff = 3.5
 raise_error = false
 residual_clip_sigma = 15.0 # keep this high to avoid over-masking
