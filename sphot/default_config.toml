@@ -38,6 +38,16 @@ bkg_refit_per_iteration = true
 # Prevents thresholds from collapsing if the residual happens to look very
 # clean over a small box (e.g. one well-fit bright source).
 bkg_floor_factor = 0.3
+# Within the threshold ladder loop, drop new detections that lie within
+# this * psf_sigma of any source already in the accumulated psf_table.
+# Without this, sources that re-detect across multiple ladder passes (the
+# iterative subtraction is imperfect and leaves a bump) accumulate as
+# near-duplicate rows, which poison downstream NNLS refits (co-degenerate
+# columns -> arbitrary flux split). Default 0.5 (~ 0.5 * psf_sigma) is
+# tight enough to catch only true co-located duplicates without merging
+# genuinely close pairs (which can sit closer than 1 FWHM in dense
+# fields). Set to 0 to disable.
+ladder_dedup_psfsigma = 0.5
 # After the threshold ladder finishes, run a final refit. Two methods
 # are available; pick via `final_refit_method`:
 #

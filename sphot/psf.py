@@ -528,6 +528,36 @@ def filter_psfphot_results(phot_result,
         return s, s_dict, msg
     return s, msg
 
+
+def _dedup_phot_against(new_phot, existing_phot, dedup_radius):
+    ''' Drop rows in `new_phot` whose (x_fit, y_fit) is within
+    `dedup_radius` (in data px) of any row in `existing_phot`. Returns
+    the filtered slice of `new_phot`.
+
+    Used inside `iterative_psf_fitting`'s ladder loop so that sources
+    re-detected by multiple ladder passes (because the iterative
+    subtraction left a residual bump where a fit had been) are not
+    written to psf_table multiple times. Without this the saved
+    psf_table can contain dozens of near-coincident duplicate entries
+    that poison downstream NNLS refits.
+    '''
+    if (existing_phot is None or len(existing_phot) == 0
+            or new_phot is None or len(new_phot) == 0):
+        return new_phot
+    nx = np.asarray(new_phot['x_fit'], dtype=float)
+    ny = np.asarray(new_phot['y_fit'], dtype=float)
+    ex = np.asarray(existing_phot['x_fit'], dtype=float)
+    ey = np.asarray(existing_phot['y_fit'], dtype=float)
+    r2 = float(dedup_radius) ** 2
+    keep = np.ones(len(new_phot), dtype=bool)
+    for i in range(len(new_phot)):
+        dx = nx[i] - ex
+        dy = ny[i] - ey
+        if (dx * dx + dy * dy).min() <= r2:
+            keep[i] = False
+    return new_phot[keep]
+
+
 def sigma_clip_outside_aperture(data,sersic_params_physical,clip_sigma=4,
                                 aper_size_in_r_eff=1):
     
@@ -758,12 +788,33 @@ def iterative_psf_fitting(data,psf_model,psf_sigma,
             else:
                 _phot_result, _resid = psf_results
                 if not np.all(~np.isfinite(_resid)) and len(_phot_result) > 0:
-                    # append the results
+                    # append the results, deduplicating against existing rows.
+                    # Without this, sources that re-detect across multiple
+                    # ladder passes (because the iterative subtraction is
+                    # imperfect and they leave a bump) accumulate into
+                    # near-duplicate entries in psf_table. Downstream NNLS
+                    # refits then have co-degenerate columns and split flux
+                    # arbitrarily between them, producing structured positive
+                    # residuals between marked sources in dense regions.
                     resid = _resid
                     if phot_result is None:
                         phot_result = _phot_result
                     else:
-                        phot_result = vstack([phot_result, _phot_result])
+                        dedup_psfsigma = float(config['psf'].get(
+                            'ladder_dedup_psfsigma',
+                            config['psf'].get('final_refit_dedup_psfsigma',
+                                              1.5)))
+                        new_rows = _dedup_phot_against(
+                            _phot_result, phot_result,
+                            dedup_psfsigma * psf_sigma)
+                        n_dropped = len(_phot_result) - len(new_rows)
+                        if n_dropped > 0:
+                            logger.debug(
+                                f'  ladder dedup: dropped {n_dropped}/'
+                                f'{len(_phot_result)} duplicate detections '
+                                f'(within {dedup_psfsigma:.1f}*psf_sigma)')
+                        if len(new_rows) > 0:
+                            phot_result = vstack([phot_result, new_rows])
                     last_successful_th = th
                     added_sources = True
         except Exception as e:

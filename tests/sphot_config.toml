@@ -38,6 +38,12 @@ bkg_refit_per_iteration = true
 # Prevents thresholds from collapsing if the residual happens to look very
 # clean over a small box (e.g. one well-fit bright source).
 bkg_floor_factor = 0.3
+# Drop ladder detections that duplicate (within this*psf_sigma of) an
+# already-recorded source. Prevents psf_table from collecting multiple
+# rows for the same star when the iterative residual subtraction is
+# imperfect. 0.5 catches true co-located duplicates without merging real
+# close pairs. 0 disables.
+ladder_dedup_psfsigma = 0.5
 # Final refit method. 'iterative' (legacy LM + leftover-detection) or
 # 'perbin_nnls' (per-bin extra-blur + non-negative least-squares).
 # 'perbin_nnls' was selected from the proto_08 experiment: lower MAD,
