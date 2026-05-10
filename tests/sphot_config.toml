@@ -1,6 +1,6 @@
 [prep]
 filters = ['F555W', 'F814W', 'F090W', 'F150W', 'F160W', 'F277W']
-PSF_file = 'PSFdata.h5'
+PSF_file = '../sample_data/psf_data.h5'
 blur_psf = {F555W = 4, F814W = 5, F090W = 3.8, F150W = 3.8, F160W = 9, F277W = 9}
 custom_initial_crop = 1
 sigma_guess = 10
@@ -10,7 +10,7 @@ auto_crop_factor = 8 # size of each axis in units of STD of best-fit Gaussian
 [core]
 base_filter = 'F150W'
 iter_basefit = 10
-iter_scalefit = 3
+iter_scalefit = 5
 fit_complex_model = false
 allow_refit = false
 # Main-loop early-exit: stop iterating when sersic params (standardized [0,1]
@@ -23,9 +23,9 @@ mainloop_min_iter = 2
 
 [psf]
 # iterative fit settings
-th_min = 5
-th_max = 30
-th_iter = 10 # N_iteration between min and max
+th_min = 1
+th_max = 5
+th_iter = 5 # N_iteration between min and max
 # Early-stop the threshold sweep after this many consecutive thresholds add
 # no new sources. Set very high to disable.
 th_max_consec_empty = 3
@@ -41,16 +41,14 @@ bkg_floor_factor = 0.3
 # After the threshold ladder finishes, refit ALL quality-passing sources
 # simultaneously on the original background-subtracted data, with
 # init_params from the ladder. Rebalances fluxes for blended pairs that
-# were fit in different ladder passes (the bright one's flux ate into its
-# dim neighbour before the dim neighbour was detected).
+# were fit in different ladder passes.
 final_joint_refit = true
-# How far positions are allowed to move during the joint refit (px). 0.0
-# fixes positions exactly; 0.5 lets the fitter recenter slightly without
-# letting sources run away.
+# How far positions are allowed to move during the joint refit (px).
 final_refit_xy_bounds = 0.5
 mask_aper_size_in_r_eff = 3.5
 raise_error = false
 residual_clip_sigma = 15.0 # keep this high to avoid over-masking
+
 # Posterior blur calibration: after the main threshold ladder, each
 # PSFFitter.fit() re-fits the K brightest quality-passing sources with the
 # PSF rebuilt at a 4-point symmetric additive bracket
@@ -98,7 +96,7 @@ cuts_res_cen_sigma_clip = 3.0 # -N*bkg_std < res_cen < max(N*std(res_cen), N*bkg
 cuts_cfit_sigma_clip = 3.0 # N-sigma for cfit
 # cuts_qfit_median_factor = 2.0 # max_qfit/median(qfit)
 cuts_chi2dof_median_factor = 3.0 # max_chi2dof/median(chi2dof)
-cuts_pos_diff_median_factor = 2.0 # max_pos_diff/median(pos_diff)
+cuts_pos_diff_median_factor = 3.0 # max_pos_diff/median(pos_diff)
 cuts_flux_SNR_min = 1.0 # min flux_SNR
 
 [aperture]
