@@ -118,7 +118,6 @@ def load_and_crop(datafile,filters,psffile=None,
             cutoutdata.y0_guess = y0
     if plot:
         galaxy.plot()
-        plt.show()
     for cutoutdata in galaxy.image_list:
         cutoutdata.galaxy_size = galaxy_size
     for cutoutdata in galaxy.image_list:

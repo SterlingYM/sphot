@@ -1,0 +1,52 @@
+/* Side-by-side mermaid columns for the Algorithm overview page.
+   The RTD theme caps content width at ~800px, which is too narrow for
+   3-column mermaid charts. Expand the content column and break out of
+   the wrapper margins on pages that use these grids. */
+body:has(.sphot-grid) .wy-nav-content {
+    max-width: 1600px;
+}
+.sphot-grid {
+    display: grid;
+    gap: 12px;
+    align-items: start;
+    margin: 16px 0;
+    /* Allow the grid itself to expand wider than narrow content blocks
+       around it, but stay readable on big screens. */
+    width: 100%;
+}
+.sphot-grid-2 { grid-template-columns: 1fr 1fr; }
+.sphot-grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+.sphot-col {
+    border: 1px solid #ddd;
+    padding: 6px 8px;
+    background: #fafafa;
+    border-radius: 6px;
+    overflow: visible;
+}
+.sphot-col > p:first-child {
+    /* The ":sub-title:" rubric we render at the top of each column */
+    font-weight: 600;
+    color: #333;
+    font-size: 13px;
+    margin: 0 0 4px 0;
+}
+.sphot-col svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+/* sphinxcontrib-mermaid injects an inline stylesheet at runtime that pins
+   `pre.mermaid > svg { height: 500px }`. That clamps tall column charts
+   to a 500px box, scaling text down to unreadable sizes. Override it
+   inside our column grid so charts render at their natural aspect ratio. */
+.sphot-col pre.mermaid > svg,
+.sphot-col .mermaid > svg {
+    height: auto !important;
+    width: 100% !important;
+}
+
+/* Drop the per-block fullscreen button on the column variant — it's noisy
+   when you have 5 of them on the page. */
+.sphot-col .mermaid-fullscreen-btn { display: none; }

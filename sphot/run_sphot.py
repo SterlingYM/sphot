@@ -27,11 +27,12 @@ if '--help' in sys.argv:
     sys.exit()
         
 # import everything else needed to actually run sphot
-import os 
+import os
 import numpy as np
 from sphot.utils import load_and_crop
-from sphot.core import run_basefit, run_scalefit, run_aperphot, logger
+from sphot.core import run_basefit, run_aperphot, logger
 from sphot.data import read_sphot_h5
+from sphot.parallel import parallel_scalefit
 from .config import config
 global config
     
@@ -141,7 +142,7 @@ def run_sphot(datafile,
     ''' main commands are put in this dummy function so that the rich output can be forwarded to a log file when running in slurm'''
 
     base_filter = config['core']['base_filter']
-    blur_psf = config['prep']['blur_psf']
+    blur_psf = dict(config['prep'].get('blur_psf', {}))
     iter_basefit = config['core']['iter_basefit']
     iter_scalefit = config['core']['iter_scalefit']
 
@@ -174,40 +175,42 @@ def run_sphot(datafile,
         run_basefit(galaxy,
                     base_filter = base_filter,
                     fit_complex_model = config['core']['fit_complex_model'],
-                    blur_psf = blur_psf[base_filter],
+                    blur_psf = blur_psf.get(base_filter),
                     N_mainloop_iter = iter_basefit,
                     **kwargs)
         galaxy.save(out_path)
-    
-    # 3. Scale Sersic model (if necessary)
+
+    # 3. Scale Sersic model (parallel across non-base filters)
     if rerun_scalefit or continue_scalefit:
-        logger.info('----- Starting Scale fit -----')
+        logger.info('----- Starting Scale fit (parallel) -----')
         logger.info(f'Number of iterations: {iter_scalefit+1}')
         logger.info(f'Filters to fit: {filters_to_fit}')
         base_params = galaxy.images[base_filter].sersic_params
+        # Decide which filters need scalefit. With --rerun_scalefit, redo
+        # all of them; otherwise skip filters that already have a finite
+        # psf_sub_data array.
+        todo = []
         for filt in filters_to_fit:
-            # check if we should skip scalefit
-            if hasattr(galaxy.images[filt],'psf_sub_data') and not rerun_scalefit:
-                # skip scalefit if data exists and not rerun_scalefit==True
-                if not np.any(np.isfinite(getattr(galaxy.images[filt],'psf_sub_data'))):
-                    logger.info(f'Filter {filt} already has PSF-subtracted data, but it is all-NaN. running Sphot again...')
-                    pass
-                else:
-                    logger.info(f'Filter {filt} already has PSF-subtracted data')
-                    continue
-                
-            # run scalefit
-            try:
-                run_scalefit(galaxy,filt,base_params,
-                            allow_refit=config['core']['allow_refit'],
-                            fit_complex_model=config['core']['fit_complex_model'],
-                            N_mainloop_iter=iter_scalefit,
-                            blur_psf=blur_psf[filt],
-                            **kwargs)
-                galaxy.save(out_path)
-            except Exception as e:
-                logger.info(f'Filter {filt} failed: {str(e)}')
+            if filt == base_filter:
                 continue
+            cd = galaxy.images[filt]
+            if hasattr(cd, 'psf_sub_data') and not rerun_scalefit:
+                if np.any(np.isfinite(getattr(cd, 'psf_sub_data'))):
+                    logger.info(f'Filter {filt} already has PSF-subtracted data; skipping')
+                    continue
+                logger.info(f'Filter {filt} has all-NaN psf_sub_data; redoing')
+            todo.append(filt)
+        if todo:
+            blur_for = {f: blur_psf.get(f) for f in todo}
+            parallel_scalefit(
+                galaxy, base_params, todo, blur_for,
+                allow_refit=config['core']['allow_refit'],
+                fit_complex_model=config['core']['fit_complex_model'],
+                N_mainloop_iter=iter_scalefit,
+                working_dir=os.getcwd(),
+                log_dir=os.path.join(out_folder, 'parallel_logs'),
+            )
+            galaxy.save(out_path)
     
     # 4. run aperphot if necessary
     if photometry:

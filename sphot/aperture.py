@@ -404,26 +404,22 @@ class IsoPhotApertures():
         # plt.show()
         
     def get_aper_at(self,petro=None,flux_frac=None,x_attr='semi_major_axes'):
-
-
-        if not hasattr(self,'petro_idx_interp'):   
+        if not hasattr(self,'petro_idx_interp'):
             # interpolate petrosian indices
             # note: normalizedsmooth=True assures that xdata and y_interp are invariant
-            xdata = getattr(self,x_attr)   
+            xdata = getattr(self,x_attr)
             ydata = self.petro_idx
             s = np.isfinite(xdata) & np.isfinite(ydata)
             interp_func = csaps(xdata[s],ydata[s],normalizedsmooth=True)
             y_interp = interp_func(xdata,extrapolate=False)
             self.petro_idx_interp = y_interp
-            
+
         if petro is not None:
             idx = np.nanargmin(np.abs(self.petro_idx_interp - petro))
-        elif sb is not None:
-            idx = np.nanargmin(np.abs(self.flux_frac_levels - flux_frac))
+        elif flux_frac is not None:
+            idx = np.nanargmin(np.abs(np.asarray(self.frac_enc) - flux_frac))
         else:
             raise ValueError('either petro or flux_frac must be provided')
-        # self.frac_enclosed_at_aper_sci = self.petro_flux_enclosed[np.argmin(np.abs(self.petro_idx - petro))] / self.petro_flux_enclosed.max()
-        # self.frac_enclosed_at_aper_sci = self.frac_enc[idx]
         return self.apertures[idx]
     
 class CutoutDataPhotometry():

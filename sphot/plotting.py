@@ -195,7 +195,7 @@ def plot_sphot_results(cutoutdata,right_attr='psf_sub_data',dpi=100,
         sky_model = cutoutdata._bkg_level
     rawdata_bksub = cutoutdata._rawdata - sky_model.mean() # cutoutdata._bkg_level
     bestfit_sersic_img = cutoutdata.sersic_modelimg
-    sersic_residual = cutoutdata.sersic_residual
+    sersic_residual = cutoutdata.sersic_residual #- sky_model.mean() 
     psf_model_total = cutoutdata.psf_modelimg
     psf_subtracted_data_bksub = getattr(cutoutdata,right_attr)
                   
