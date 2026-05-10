@@ -1,11 +1,11 @@
 [prep]
 filters = ['F555W', 'F814W', 'F090W', 'F150W', 'F160W', 'F277W']
 PSF_file = 'PSFdata.h5'
-blur_psf = {F555W = 4, F814W = 5, F090W = 3.8, F150W = 3.8, F160W = 9, F277W = 9}
+blur_psf = {}                          # empty: calibrator bootstrap picks per-filter blur
 custom_initial_crop = 1
 sigma_guess = 10
 auto_crop = true
-auto_crop_factor = 8 # size of each axis in units of STD of best-fit Gaussian
+auto_crop_factor = 8                   # cutout half-axis in σ of best-fit Gaussian
 
 [core]
 base_filter = 'F150W'
@@ -13,176 +13,108 @@ iter_basefit = 10
 iter_scalefit = 3
 fit_complex_model = false
 allow_refit = false
-# Main-loop early-exit: stop iterating when sersic params (standardized [0,1]
-# parameter vector) move by less than mainloop_convergence_atol for
-# mainloop_convergence_patience consecutive iterations, but never before
-# mainloop_min_iter. Set patience very high to disable.
-mainloop_convergence_atol = 1e-3
-mainloop_convergence_patience = 2
-mainloop_min_iter = 2
+mainloop_convergence_atol = 1e-3       # stop when |Δ standardized sersic params| < atol
+mainloop_convergence_patience = 2      # consecutive within-atol iters required to early-stop
+mainloop_min_iter = 2                  # never early-stop before this many iters
+use_dual_annealing = true              # iter-1 main-loop sersic fit: short iNM -> scipy.dual_annealing (escape false basins)
+use_final_polish = true                # post-mainloop L-BFGS-B polish on the final sersic params
+
+[psf-calib]
+in_mainloop = false                    # enable per-iter kernel recalibration
+kernel_family = 'gaussian'             # 'gaussian' | 'moffat' | 'drizzle'
+kernel_anchor_K = 30                   # # of brightest anchors used in the kernel fit
+kernel_fit_skip_on_convergence = false # if true, skip fwhm scan once kernel L2 stable
+kernel_skip_threshold = 1e-3           # L2 distance below which the scan is skipped (only when above is true)
+
+kernel_fit_objective = 'multi_source'      # 'multi_source' (NNLS lstsq) | 'single_source' (legacy LM)
+kernel_fit_stamp_half_min = 8              # min stamp half (px)
+kernel_fit_stamp_half_in_sigmaeff = 3.0    # adaptive: half = factor × √(psf_sigma² + σ_kernel²)
+kernel_fit_max_neighbors = 15              # max neighbour columns per stamp
+kernel_fit_neighbor_pad_pix = 4.0          # neighbour search radius beyond stamp (px)
+center_mask_r_in_fwhm = 2.5                # calibration centre mask radius (× empirical effective PSF FWHM); 0 disables
+
+# fwhm scan inner photometry: 'lm' (default photutils PSFPhotometry) or 'nnls'
+# (forced photometry at DAO positions, no SourceGrouper, no LM iters).
+# When scan_method='nnls', `scan_metric` ranks bracket candidates by
+#   'sum_snr'   = max Σ(flux/flux_err)
+#   'resid_mad' = min residual MAD
+#   'count'     = max # of NNLS sources passing flux_SNR cut (saturates with top_k)
+# scan_top_k caps DAO detections to the brightest K (0 disables).
+scan_method = 'lm'
+scan_metric = 'sum_snr'
+scan_top_k = 100
+
+# fwhm_method: how to choose dao_fwhm_factor for the matched-filter detection.
+#   'scan'      = run the bracket scan (uses scan_method/scan_metric/scan_top_k)
+#   'empirical' = skip the scan; set factor = empirical_FWHM(cd.psf) / psf_sigma
+#                 via photutils.psf.fit_fwhm (matched-filter theorem).
+fwhm_method = 'empirical'
 
 [psf]
-# iterative fit settings
 th_min = 5
 th_max = 30
-th_iter = 10 # N_iteration between min and max
-# Early-stop the threshold sweep after this many consecutive thresholds add
-# no new sources. Set very high to disable.
-th_max_consec_empty = 3
-# After each successful threshold pass, re-estimate bkg_std from the cleaned
-# residual. In crowded fields the initial noise estimate is dominated by the
-# unresolved-star carpet, so subsequent thresholds can ratchet down as
-# sources are subtracted, exposing dim stars buried in the apparent noise.
-bkg_refit_per_iteration = true
-# Floor on the re-estimated bkg_std as a fraction of the initial value.
-# Prevents thresholds from collapsing if the residual happens to look very
-# clean over a small box (e.g. one well-fit bright source).
-bkg_floor_factor = 0.3
-# Within the threshold ladder loop, drop new detections that lie within
-# this * psf_sigma of any source already in the accumulated psf_table.
-# Without this, sources that re-detect across multiple ladder passes (the
-# iterative subtraction is imperfect and leaves a bump) accumulate as
-# near-duplicate rows, which poison downstream NNLS refits (co-degenerate
-# columns -> arbitrary flux split). Default 0.5 (~ 0.5 * psf_sigma) is
-# tight enough to catch only true co-located duplicates without merging
-# genuinely close pairs (which can sit closer than 1 FWHM in dense
-# fields). Set to 0 to disable.
-ladder_dedup_psfsigma = 0.5
-# After the threshold ladder finishes, run a final refit. Two methods
-# are available; pick via `final_refit_method`:
-#
-#   'iterative'   -- iterative LM refit + leftover-source detection
-#                    (the legacy mode). Knobs: final_joint_refit (bool
-#                    on/off), final_refit_xy_bounds, final_refit_iterations,
-#                    final_refit_detect_th, final_refit_dedup_psfsigma,
-#                    final_refit_residual_tol,
-#                    final_refit_catastrophic_flux_factor,
-#                    final_refit_fit_shape.
-#
-#   'perbin_nnls' -- bin sources by flux into a few flux percentiles,
-#                    calibrate a per-bin extra blur, then solve all
-#                    fluxes jointly via non-negative least squares with
-#                    positions pinned. Deterministic, no negative-flux
-#                    outputs, runs in seconds. Knobs:
-#                    perbin_flux_percentiles, perbin_extra_blurs.
-#                    Origin: tests/psf_experiments/proto_08.
-#
-#   'none'        -- skip the final refit entirely.
-final_refit_method = 'iterative'
+th_iter = 10                           # threshold ladder steps
+th_max_consec_empty = 3                # early-stop ladder after N empty passes
+bkg_refit_per_iteration = true         # re-estimate bkg_std after each successful pass
+bkg_floor_factor = 0.3                 # floor on re-estimated bkg_std (fraction of initial)
+ladder_dedup_psfsigma = 0.5            # in-ladder duplicate cut (× psf_sigma); 0 disables
 
-# === iterative (legacy) refit knobs ===
-# Iterative joint refit: each pass refits all quality-passing sources
-# simultaneously (positions pinned by xy_bounds=0 by default; grouper
-# handles blends), then detects leftover positive peaks in the residual,
-# adds them deduplicated against existing sources, and refits. Stops
-# when residual MAD stops improving or `final_refit_iterations` is
-# reached. Pinning positions prevents bright stars from drifting into
-# dim neighbours and stealing flux; re-detection ensures dim neighbours
-# that the brights would have absorbed get their own model.
+final_refit_method = 'iterative'       # 'iterative' | 'nnls' | 'none'
+
+# 'iterative' refit
 final_joint_refit = true
-# How far positions are allowed to move during the joint refit (px). 0
-# pins positions exactly. Use a small positive value (e.g. 0.3) only if
-# you trust the input positions less than the joint-fit centroiding.
-final_refit_xy_bounds = 0.0
-# Maximum joint-refit iterations.
+final_refit_xy_bounds = 0.0            # px; 0 pins positions
 final_refit_iterations = 5
-# Threshold for leftover-source detection in the residual, in units of
-# the *current* residual MAD (re-estimated after each refit).
-final_refit_detect_th = 4.0
-# A new detection within (this * psf_sigma) of an existing source -- or
-# of another new detection in the same iteration -- is treated as a
-# duplicate and dropped. Should be >= grouper_separation_in_psfsigma so
-# we never inject a source into the grouper's same-group radius.
+final_refit_detect_th = 4.0            # leftover detect threshold (× residual MAD)
 final_refit_dedup_psfsigma = 2.0
-# Stop iterating when the fractional drop in residual MAD between two
-# consecutive iterations falls below this. Set to 0 to always run all
-# `final_refit_iterations`.
-final_refit_residual_tol = 0.01
-# Drop fits whose absolute flux exceeds this multiple of the
-# median(|flux|) before the next iteration. Catches degenerate
-# compensating-pair solutions that the grouper sometimes finds.
+final_refit_residual_tol = 0.01        # stop when residual MAD stops improving
 final_refit_catastrophic_flux_factor = 20.0
-# === perbin_nnls refit knobs ===
-# Flux percentiles used to split sources into bins. Length N gives N+1
-# bins (default [33, 67] => 3 bins: dim / mid / bright).
-perbin_flux_percentiles = [33.0, 67.0]
-# Candidate extra-blur sigmas to scan per bin (oversampled-PSF px,
-# applied on top of PSFFitter's chosen blur). Each bin picks the value
-# that minimises the median local-residual MAD over its own sources.
-# Bright-end bins typically prefer extra=0 because PSFFitter calibrates
-# blur on the bulk; dim bins often prefer +1 or +2 px.
-perbin_extra_blurs = [0.0, 1.0, 2.0, 3.0, 4.0]
+final_refit_fit_shape = [11, 11]       # joint-refit fit window (px)
 
-# fit_shape (in pixels) used by the joint refit only. Wider than the
-# ladder's PSFPhotometry_fit_shape because positions are pinned, the
-# LM only has to solve for fluxes, and a wider window constrains the
-# PSF wings -- which is what reduces the dipole structure (residual
-# peak / over-subtraction dip) around bright stars in crowded fields.
-final_refit_fit_shape = [11, 11]
-mask_aper_size_in_r_eff = 3.5
+# 'nnls' refit + post-NNLS find_peaks leftover loop
+leftover_max_iterations = 3            # 0 disables the leftover loop
+leftover_detect_k_sigma = 5.0
+leftover_dedup_psfsigma = 1.5
+leftover_box_size = 3
+
+mask_aper_size_in_r_eff = 3.5          # sky-mask aperture size (× r_eff)
 raise_error = false
-residual_clip_sigma = 15.0 # keep this high to avoid over-masking
-# Posterior blur calibration: after the main threshold ladder, each
-# PSFFitter.fit() re-fits the K brightest quality-passing sources with the
-# PSF rebuilt at a 4-point symmetric additive bracket
-#   [current - Δ, current - Δ/3, current + Δ/3, current + Δ]
-# and picks the vertex of a least-squares quadratic fit through the
-# (cfit+qfit) metric. With 4 samples np.polyfit averages out per-pixel
-# noise. Δ is an adaptive step (in pixels) tracked across fit() calls: it
-# grows when the bracket's minimum lands at an edge (too narrow), shrinks
-# when it lands at the interior (converging).
-psf_blur_initial_delta = 0.3 # starting Δ in pixels
-psf_blur_min_delta = 0.05    # never search finer than this
-psf_blur_max_delta = 2.0     # never search wider than this
-# Number of brightest quality-passing sources to re-fit per candidate.
-# Smaller = faster calibration but noisier metric.
-psf_blur_calib_K = 30
-# Skip calibration when fewer than this many sources pass the quality cuts.
-psf_blur_calib_min_sources = 3
-# Require the grid minimum's (cfit+qfit) score to beat the current blur's
-# score by at least this relative amount before switching. Prevents
-# noise-driven oscillation when the metric is flat. 0.05 = 5% improvement.
-psf_blur_improvement_tol = 0.05
-# After this many consecutive fit() calls where the calibration returns the
-# same blur, skip further calibrations until cutoutdata.psf_blurring is
-# externally reset. Set very high to always recalibrate.
-psf_blur_stable_after = 2
+residual_clip_sigma = 15.0             # high to avoid over-masking
 
-# finder/grouper/bkg parameters
 finder_kwargs = {roundness_range=[-1.0, 1.0], sharpness_range=[0.20, 1.0]}
 grouper_separation_in_psfsigma = 2
 bkg_sigma_clip = 3.0
-bkg_box_size = [10,10]
-bkg_filter_size = [5,5]
-localbkg_bounds_in_psfsigma = [2,5]
+bkg_box_size = [10, 10]
+bkg_filter_size = [5, 5]
+localbkg_bounds_in_psfsigma = [2, 5]
 
-# Photutils PSFPhotometry parameters
+center_mask_r_in_fwhm = 1.5            # iPSF centre mask radius (× empirical effective PSF FWHM); 0 disables
+
 PSFPhotometry_aperture_radius = 3
 PSFPhotometry_fitter_maxiters = 300
-PSFPhotometry_fit_shape = [3,3] # pixels. use small number for crowded fields
-modelimg_render_shape = [25,25]
+PSFPhotometry_fit_shape_in_fwhm = 1.5  # n = max(3, next_odd(2.355·psf_sigma·frac))
+modelimg_render_shape = [25, 25]
 PSFPhotometry_group_warning_threshold = 10
 
-# quality cuts
-cuts_pos_err_max = 2 # pixels in fitted coordinates
-cuts_res_cen_sigma_clip = 3.0 # -N*bkg_std < res_cen < max(N*std(res_cen), N*bkg_std)
-cuts_cfit_sigma_clip = 3.0 # N-sigma for cfit
-# cuts_qfit_median_factor = 2.0 # max_qfit/median(qfit)
-cuts_chi2dof_median_factor = 3.0 # max_chi2dof/median(chi2dof)
-cuts_pos_diff_median_factor = 2.0 # max_pos_diff/median(pos_diff)
-cuts_flux_SNR_min = 1.0 # min flux_SNR
+# Quality cuts
+cuts_pos_err_max = 2                   # max fitted x/y err (px)
+cuts_res_cen_sigma_clip = 3.0
+cuts_cfit_sigma_clip = 3.0
+cuts_chi2dof_median_factor = 3.0       # max_chi2dof / median(chi2dof)
+cuts_pos_diff_median_factor = 2.0      # max_pos_diff / median(pos_diff)
+cuts_flux_SNR_min = 1.0
 
 [aperture]
 petro = 0.5
-center_mask=4.0
-plot=true
+center_mask = 4.0                      # aperture-photometry centre mask
+plot = true
 isophot_base_filter = 'F150W'
 isophot_frac_min = 0.05
 isophot_frac_max = 0.95
-fit_isophot_to='sersic_modelimg'
+fit_isophot_to = 'sersic_modelimg'
 measure_on = 'psf_sub_data'
 error_on = 'psf_sub_data_error'
-measure_sky_on='residual_masked'
-fill_max_nan_frac=0.7
-fill_replace_with='median'#'sersic_modelimg'
-PSF_corr_base_filter='F090W'
+measure_sky_on = 'residual_masked'
+fill_max_nan_frac = 0.7
+fill_replace_with = 'median'           # alternative: 'sersic_modelimg'
+PSF_corr_base_filter = 'F090W'

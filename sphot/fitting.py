@@ -94,10 +94,10 @@ class SphotModel(PSFConvolvedModel2D):
         return np.array(bounds)
     
     def set_conditions(self,list_of_conditions):
-        ''' set condition functions.
+        '''Set condition functions.
+
         Args:
-            list_of_conditions (list of 2-tuple): list of conditions, each as a 2-tuple. Each tuple is evaluated so that (a,b) is True if a >= b.
-            Inside the tuple can be either the parameter name or numerical value. For example, [('r_eff',10),('r_eff_1','r_eff_0')] means that it returns True if (r_eff >= 10 AND r_eff_1 >= r_eff_0).
+            list_of_conditions (list of 2-tuple): list of conditions, each as a 2-tuple. Each tuple ``(a, b)`` is evaluated as ``a >= b``. Either entry of the tuple can be a parameter name or a numerical value. For example, ``[('r_eff', 10), ('r_eff_1', 'r_eff_0')]`` returns True iff ``r_eff >= 10`` AND ``r_eff_1 >= r_eff_0``.
         '''
         def condition_func(theta):
             free_params_dict = dict(zip(self.free_params,theta))
@@ -193,16 +193,59 @@ class ModelFitter():
             iNM_kwargs.update(kwargs)
             result,success = iterative_NM(self.calc_chi2, (), self.model.x0, 
                                         self.bounds,**iNM_kwargs)
-        elif method == 'triple_annealing':
-            result,success = triple_annealing(self.calc_chi2,(),
-                                              self.model.x0,
-                                              self.bounds,
-                                              **kwargs)
+        elif method == 'dual_annealing':
+            # Iter-1 global escape. Pre-bracket with a short iNM, then run a
+            # single scipy.dual_annealing pass. Output is routed through the
+            # provided Rich `progress` task so it stays inside the existing
+            # progress block instead of streaming raw prints.
+            progress = kwargs.pop('progress', None)
+            progress_text = kwargs.pop('progress_text',
+                                       'dual_annealing global escape')
+            da_maxiter = int(kwargs.pop('da_maxiter', 10))
+
+            pre_iNM_kwargs = dict(rtol_init=1e-3, rtol_iter=1e-3,
+                                  rtol_convergence=1e-6, xrtol=1, max_iter=5)
+            result, _ = iterative_NM(self.calc_chi2, (), self.model.x0,
+                                     self.bounds, **pre_iNM_kwargs)
+
+            if progress is not None:
+                da_task = progress.add_task(progress_text, total=da_maxiter)
+
+                def _da_callback(x, f, context):
+                    progress.update(da_task, advance=1, refresh=True)
+                    return False
+            else:
+                _da_callback = None
+
+            result = dual_annealing(
+                self.calc_chi2,
+                bounds=self.bounds,
+                x0=result.x,
+                maxiter=da_maxiter,
+                initial_temp=10.0,
+                seed=0,
+                callback=_da_callback,
+                minimizer_kwargs=dict(method='L-BFGS-B', bounds=self.bounds,
+                                      options=dict(eps=1e-4, maxfun=1000)),
+            )
+            if progress is not None:
+                progress.update(da_task, completed=da_maxiter, refresh=True)
+                progress.remove_task(da_task)
+            success = True
         elif method == 'BFGS':
             result = minimize(self.calc_chi2,self.model.x0,
                             bounds=self.bounds,
                             method='L-BFGS-B',
                             options=dict(eps=1e-4,maxfun=1000))
+            success = result.success
+        elif method == 'lbfgsb_polish':
+            # Tight L-BFGS-B polish meant to run after iNM/dual_annealing
+            # has placed us inside the basin; tightens chi^2 to gradient ~ 0.
+            result = minimize(self.calc_chi2,self.model.x0,
+                            bounds=self.bounds,
+                            method='L-BFGS-B',
+                            options=dict(eps=1e-5,ftol=1e-12,gtol=1e-10,
+                                         maxfun=2000))
             success = result.success
         else:
             raise ValueError('method not recognized')
@@ -212,22 +255,22 @@ class ModelFitter():
                                                 self.unstandardize_params(result.x)))
         bestfit_img = self.eval_model(result.x)
         sersic_residual = self.cutoutdata._rawdata - bestfit_img # always take residual from raw data
-        
+
         # update the total residual
         psf_modelimg = getattr(self.cutoutdata,'psf_modelimg',0)
         residual_img = self.cutoutdata._rawdata - psf_modelimg - bestfit_img
         residual_masked = residual_img.copy() # no sigma clipping
-        
+
         # save all information in cutoutdata
         self.cutoutdata.sersic_params_physical = bestfit_sersic_params_physical
         self.cutoutdata.sersic_params = result.x
         self.cutoutdata.sersic_modelimg = bestfit_img
-        self.cutoutdata.sersic_residual = sersic_residual 
+        self.cutoutdata.sersic_residual = sersic_residual
         self.cutoutdata.residual = residual_img
         self.cutoutdata.residual_masked = residual_masked
         self.model.x0 = result.x
         save_bestfit_params(self.cutoutdata,bestfit_sersic_params_physical)
-        
+
         return self.cutoutdata
 
 class ModelScaleFitter(ModelFitter):
@@ -304,7 +347,7 @@ class ModelScaleFitter(ModelFitter):
                                                 self.unstandardize_params(scaled_modelparams)))
         bestfit_img = self.eval_model(scaled_modelparams)
         sersic_residual = self.cutoutdata._rawdata - bestfit_img # always take residual from raw data
-        
+
         # update the total residual
         psf_modelimg = getattr(self.cutoutdata,'psf_modelimg',0)
         residual_img = self.cutoutdata._rawdata - psf_modelimg - bestfit_img
@@ -321,34 +364,6 @@ class ModelScaleFitter(ModelFitter):
         save_bestfit_params(self.cutoutdata,bestfit_sersic_params_physical)
         return self.cutoutdata
     
-def triple_annealing(func,args=(),x0=None,bounds=None,max_iter=2,**kwargs):
-    # fit (INM -> loop(dual annealing -> INM))
-    result,success = iterative_NM(func, args, x0, bounds,
-                                rtol_init=1e-3,rtol_iter=1e-4,
-                                rtol_convergence=1e-6,xrtol=1,max_iter=5)
-    for i in range(max_iter):
-        np.random.seed(i)
-        print('\n performing dual annealing global optimization...')
-        result = dual_annealing(func,x0=result.x,args=args,
-                                bounds = bounds,
-                                maxiter = 5+i,
-                                initial_temp = 10/(i+1),
-                                minimizer_kwargs = dict(method='L-BFGS-B',
-                                                        bounds=bounds,
-                                                        options=dict(eps=1e-4/(i+1),
-                                                                    maxfun=1000)))
-        
-        print('\n performing iterative Nelder-Mead optimization...')
-        result, success = iterative_NM(func,x0=result.x,args=args,
-                                    bounds = bounds,
-                                    max_iter = 5-i,
-                                    xrtol=1e-2/(i+1),
-                                    rtol_iter=1e-9/(i+1),
-                                    rtol_convergence=1e-10)
-        if success:
-            break
-    return result,success
-
 def iterative_NM(func,args,x0,bounds,
                 rtol_init=1e-3,rtol_iter=1e-4,
                 rtol_convergence=1e-6,xrtol=1,max_iter=20,

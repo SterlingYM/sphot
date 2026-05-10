@@ -135,7 +135,6 @@ class CutoutData():
         
         best_psf_blurring = np.mean(psf_blurring_vals[np.argmax(N_stars_found)])
         plt.axvline(best_psf_blurring/4,c='r',ls=':')
-        plt.show()
 
         self.psf_blurring = best_psf_blurring
     
@@ -280,7 +279,6 @@ class CutoutData():
             astroplot(data_sky_convolved,ax=ax2,norm=norm,offset=offset)
             astroplot(p(xx,yy),ax=ax3,norm=norm,offset=offset)
             plot_profile2d(data_sky - p(xx,yy),ax=ax4,fig=fig,lower_limit_percentile=5,norm=norm,offset=offset)
-            plt.show()
         
 class MultiBandCutout():
     ''' a container for CutoutData. Includes some useful methods for handling multiple bands of the same object.'''
@@ -322,9 +320,7 @@ class MultiBandCutout():
                 continue
             astroplot(_data,ax=ax,**kwargs)
             ax.set_title(filt)
-        fig.suptitle(f'{title} {self.name} {attr}',fontsize=15)    
-        if show:
-            plt.show()
+        fig.suptitle(f'{title} {self.name} {attr}',fontsize=15)
     
     def set_size(self,size):
         for filt in self.filters:
@@ -355,11 +351,18 @@ class MultiBandCutout():
 
     def save(self,filepath):
         ''' save the MultiBandCutout object to a h5 file '''
+        # Per-process calibrator state: skip persisting the
+        # previous-kernel image used by the skip-on-stable check.
+        TRANSIENT_CUTOUT_ATTRS = {
+            '_calibrate_psf_prev_kernel',
+        }
         with h5py.File(filepath,'w') as f:
             for g_key,g_val in self.__dict__.items():
                 if isinstance(g_val,CutoutData):
                     group = f.create_group(g_key)
                     for key,val in g_val.__dict__.items():
+                        if key in TRANSIENT_CUTOUT_ATTRS:
+                            continue
                         try:
                             if isinstance(val,dict):
                                 json_str = json.dumps(val)
@@ -501,6 +504,13 @@ def load_sphotfile(filepath):
     
 def read_sphot_h5(filepath):
     ''' load sphot h5 file and turn it into an sphot object '''
+    # Match MultiBandCutout.save's skip-list. `_calibrate_psf_kernel_iter`
+    # is kept here for back-compat with h5 files written by older sphot
+    # (which persisted the sum2g iteration counter).
+    TRANSIENT_CUTOUT_ATTRS = {
+        '_calibrate_psf_kernel_iter',
+        '_calibrate_psf_prev_kernel',
+    }
     galaxy_loaded = MultiBandCutout()
     with h5py.File(filepath,'r') as f:
         for key in f.keys():
@@ -509,6 +519,8 @@ def read_sphot_h5(filepath):
                 group = f[key]
                 cutoutdata_loaded = CutoutData()
                 for attr in group.keys():
+                    if attr in TRANSIENT_CUTOUT_ATTRS:
+                        continue
                     try:
                         _val = decode_if_bytestring(group[attr][()])
                         setattr(cutoutdata_loaded,attr,_val)
