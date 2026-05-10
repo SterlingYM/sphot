@@ -1,7 +1,6 @@
 Plotting
-=================
+========
+
+Diagnostic plots: ``astroplot`` thumbnails, photometry overlays, and run summaries.
 
 .. automodule:: sphot.plotting
-   :members:
-   :undoc-members:
-   :show-inheritance:

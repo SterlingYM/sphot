@@ -5,8 +5,16 @@
 
    notebooks/quick_look.ipynb
    rst/installation
+   rst/algorithm
    rst/tutorials
    rst/tutorial_advanced
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: Configuration
+
+   rst/config
 
 .. toctree::
    :maxdepth: 1
@@ -15,8 +23,13 @@
 
    api/core
    api/data
-   api/plotting
    api/fitting
    api/psf
+   api/calibrate_psf
    api/aperture
+   api/parallel
+   api/plotting
+   api/config
+   api/logging
    api/utils
+   api/run_sphot

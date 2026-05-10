@@ -2,6 +2,7 @@ ipykernel
 sphinx>=1.4
 nbsphinx
 sphinx_rtd_theme
+sphinxcontrib-mermaid
 # numpy
 # scipy
 # astropy
