@@ -80,7 +80,11 @@ class SphotModel(PSFConvolvedModel2D):
             elif 'amplitude' in key:
                 bounds.append([0,np.nanmax(data)])
             elif 'r_eff' in key:
-                bounds.append([0,data.shape[0]])
+                # Strictly positive: downstream EllipticalAperture
+                # construction (sigma_clip_outside_aperture) requires
+                # r_eff > 0. Sub-pixel r_eff has no physical meaning
+                # for galaxy cutouts either way.
+                bounds.append([0.5,data.shape[0]])
             elif 'n' in key:
                 bounds.append([0.1,10])
             elif 'ellip' in key:

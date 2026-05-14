@@ -279,7 +279,12 @@ def sigma_clip_outside_aperture(data,sersic_params_physical,clip_sigma=4,
     y_0 = sersic_params_physical['y_0']
     ellip = sersic_params_physical['ellip']
     theta = sersic_params_physical['theta']
-    b = (1 - ellip) * a
+    # Defensive clamps: EllipticalAperture requires a,b > 0. A degenerate
+    # Sersic fit (r_eff → 0 or ellip → 1) would otherwise crash the
+    # pipeline here. Floor at 1 px so the aperture covers at least the
+    # central pixel; downstream this just means a 1-pixel core mask.
+    a = max(float(a), 1.0)
+    b = max((1 - float(ellip)) * a, 1.0)
     aperture = EllipticalAperture((x_0, y_0), a, b, theta=theta)
     # aperture = CircularAperture((data.shape[0]/2,data.shape[1]/2),
     #                             r_eff*aper_size_in_r_eff)
