@@ -13,7 +13,13 @@ def load_config(user_config_path = 'sphot_config.toml'):
     if os.path.exists(user_config_path):
         with open(user_config_path, 'rb') as f:
             user_config = tomllib.load(f)
-            config.update(user_config)
+        for section, overrides in user_config.items():
+            if (section in config
+                    and isinstance(config[section], dict)
+                    and isinstance(overrides, dict)):
+                config[section].update(overrides)
+            else:
+                config[section] = overrides
         logger.info(f'User config file loaded: {user_config_path}')
     else:
         logger.info(f'Using the default config file: {default_config_path}')
