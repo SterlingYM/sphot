@@ -163,14 +163,19 @@ class CutoutData():
         for i,axis in enumerate([1,0]):
             if np.isfinite(self.data).sum() == 0:
                 means_smooth = gaussian_filter(self.data,sigma=sigma_kernel).mean(axis=axis)
+                s1 = np.ones(self.data.shape[1-axis], dtype=bool)
             else:
                 kernel = Gaussian2DKernel(x_stddev=sigma_kernel,y_stddev=sigma_kernel)
                 smooth_img = convolve(self.data, kernel)
+                # s1 masks the perpendicular axis (the one we keep after
+                # reducing `axis`). Drop slices that are entirely NaN before
+                # nanmean so means_smooth and axis_pixels stay the same length.
                 s1 = np.any(np.isfinite(self.data),axis=axis)
-                means_smooth = np.nanmean(smooth_img[s1],axis=axis)
-            
+                smooth_slice = np.take(smooth_img, np.where(s1)[0], axis=1-axis)
+                means_smooth = np.nanmean(smooth_slice,axis=axis)
+
             # fit Gaussian to smoothed counts
-            axis_pixels = np.arange(self.data.shape[axis-1])[s1]
+            axis_pixels = np.arange(self.data.shape[1-axis])[s1]
             shape = len(axis_pixels)
             gaussian = lambda x,mu,sigma,amp,offset: amp*np.exp(-(x-mu)**2/(2*sigma**2))+offset
             bounds = ([shape/2 - center_slack*shape,0,0,-np.inf],
@@ -193,9 +198,10 @@ class CutoutData():
                                    p0=p0, bounds=bounds,
                                    sigma=sigma[s2])
             except Exception as e:
-                axes[i].plot(axis_pixels,means_smooth,c='k',lw=4)
-                axes[i].plot(axis_pixels[s2],means_smooth[s2],c='r',ls=':')
-                axes[i].plot(axis_pixels[s2],gaussian(axis_pixels[s2],*p0),c='orange',lw=3,alpha=0.5)
+                if plot:
+                    axes[i].plot(axis_pixels,means_smooth,c='k',lw=4)
+                    axes[i].plot(axis_pixels[s2],means_smooth[s2],c='r',ls=':')
+                    axes[i].plot(axis_pixels[s2],gaussian(axis_pixels[s2],*p0),c='orange',lw=3,alpha=0.5)
                 print('p0=',p0)
                 debug_var = [means_smooth[s2],sigma[s2],gaussian(axis_pixels[s2],*p0)]
                 exception_msg = "An exception occurred. You can capture this error and look into e.debug_var, which contain [smooth_profile1d,sigma_profile1d,init_guess_1d]."
