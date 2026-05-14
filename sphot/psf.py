@@ -111,6 +111,13 @@ class PSFFitter():
                 center_mask_params=center_mask_params,
                 **kwargs)
 
+        if resid is None:
+            # iterative_psf_fitting bailed out (e.g. subtract_background failed).
+            # Leave cutoutdata's PSF attributes untouched so callers can detect
+            # the no-op via psf_table being None.
+            self.cutoutdata.psf_table = None
+            return self.cutoutdata
+
         psf_model_total = self.data - resid
         psf_model_total -= np.nanmin(psf_model_total) # PSFs are forced to be positive, so minimum is always zero
         # TODO: handle the case where all pixels are filled with PSF
@@ -470,12 +477,13 @@ def iterative_psf_fitting(data,psf_model,psf_sigma,
       
     # prepare background-subtracted data
     # take data stats & prepare background-subtracted data
-    try:        
+    try:
         data_bksub, bkg_std, data_error = subtract_background(data)
         kwargs.update({'data_shape':data_bksub.shape})
     except Exception as e:
-        logger.info(f'PSF background stats failed ({str(e)})')
-        return None,None,None,None
+        logger.warning(f'PSF background stats failed ({str(e)}); '
+                       f'skipping iterative_psf_fitting')
+        return None, None
           
     # initialize variables
     resid = data_bksub.copy()
