@@ -141,10 +141,13 @@ class ModelFitter():
     def eval_model(self,standardized_params):
         ''' render the model image based on the given parameters '''
         params = self.unstandardize_params(standardized_params)
-        
+
         parsed_params = self.model.parse_params(params)
         self.model.parameters = parsed_params
-        _img = model_to_image(self.model, size=self.data.shape)
+        # petrofit.model_to_image takes size as (x_size, y_size); numpy
+        # shape is (rows, cols) = (y, x), so reverse before passing.
+        ny, nx = self.data.shape
+        _img = model_to_image(self.model, size=(nx, ny))
         return _img
 
     def calc_chi2(self,
