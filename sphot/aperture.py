@@ -214,8 +214,13 @@ def fill_nans(galaxy,apertures,
                     s = ~np.isfinite(data) & mask
                     if s.sum() == 0:
                         continue
-                    # elif s.sum() <= max_nan_frac * mask.sum():
-                    data_filled[s] = getattr(cutoutdata,replace_with)[s].copy()
+                    if replace_with == 'median':
+                        # Mirror the i>0 path: CutoutData has no 'median'
+                        # attribute, so compute it locally from the finite
+                        # pixels inside the innermost aperture.
+                        data_filled[s] = np.nanmedian(data[mask])
+                    else:
+                        data_filled[s] = getattr(cutoutdata,replace_with)[s].copy()
                     logger.warning('NaN pixels exists near the center. Replacing with the reference image')
                     # else:
                         # logger.error('NaN pixels near the center...')
