@@ -415,7 +415,18 @@ class IsoPhotApertures():
             xdata = getattr(self,x_attr)
             ydata = self.petro_idx
             s = np.isfinite(xdata) & np.isfinite(ydata)
-            interp_func = csaps(xdata[s],ydata[s],normalizedsmooth=True)
+            # csaps requires xdata to be strictly increasing. The isophote
+            # sampling can produce non-monotonic / duplicate semi-major axes
+            # (noisy fits or plateaus), so sort + dedupe before constructing.
+            x_finite = xdata[s]
+            y_finite = ydata[s]
+            order = np.argsort(x_finite)
+            x_sorted = x_finite[order]
+            y_sorted = y_finite[order]
+            unique_mask = np.r_[True, np.diff(x_sorted) > 0]
+            interp_func = csaps(x_sorted[unique_mask],
+                                y_sorted[unique_mask],
+                                normalizedsmooth=True)
             y_interp = interp_func(xdata,extrapolate=False)
             self.petro_idx_interp = y_interp
 
