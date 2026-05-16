@@ -20,7 +20,7 @@ use_dual_annealing = true              # iter-1 main-loop sersic fit: short iNM 
 use_final_polish = true                # post-mainloop L-BFGS-B polish on the final sersic params
 
 [psf-calib]
-in_mainloop = false                    # enable per-iter kernel recalibration
+in_mainloop = true                     # per-iter kernel recalibration (set false to disable)
 kernel_family = 'gaussian'             # 'gaussian' | 'moffat' | 'drizzle'
 kernel_anchor_K = 30                   # # of brightest anchors used in the kernel fit
 kernel_fit_skip_on_convergence = false # if true, skip fwhm scan once kernel L2 stable
