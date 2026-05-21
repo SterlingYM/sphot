@@ -27,20 +27,46 @@ def get_full_traceback(e):
 
 
 def _build_center_mask(shape, center_mask_params):
-    """Build a 2D boolean mask (True = exclude) covering a circular
-    region around the Sersic centre, so DAO/find_peaks/PSFPhotometry
-    won't detect or fit the under-modelled galaxy core as a point source.
+    """Build a 2D boolean mask (True = exclude) covering the galaxy
+    centre, so DAO/find_peaks/PSFPhotometry won't detect or fit the
+    under-modelled core/disc as a point source.
 
-    `center_mask_params` is `[x_center, y_center, radius]` in data-pixel
-    units. Returns `None` if params are missing or radius is non-positive.
+    `center_mask_params` accepts either:
+      * `[x_center, y_center, radius]` — circular mask (back-compat).
+      * `[x_center, y_center, a, b, theta]` — elliptical mask with
+        semi-major `a`, semi-minor `b`, and position angle `theta`
+        (radians, CCW from +x). Matches Sersic2D's convention so the
+        calibration mask follows the fitted galaxy shape rather than
+        masking only a face-on circle.
+
+    Returns `None` if params are missing or the radius/axes are
+    non-positive.
     """
     if center_mask_params is None:
         return None
-    x_c, y_c, r = center_mask_params
-    if r is None or float(r) <= 0:
-        return None
-    yy, xx = np.indices(shape, dtype=float)
-    return ((xx - float(x_c)) ** 2 + (yy - float(y_c)) ** 2) <= float(r) ** 2
+    if len(center_mask_params) == 3:
+        x_c, y_c, r = center_mask_params
+        if r is None or float(r) <= 0:
+            return None
+        yy, xx = np.indices(shape, dtype=float)
+        return ((xx - float(x_c)) ** 2
+                + (yy - float(y_c)) ** 2) <= float(r) ** 2
+    if len(center_mask_params) == 5:
+        x_c, y_c, a, b, theta = center_mask_params
+        if a is None or b is None or float(a) <= 0 or float(b) <= 0:
+            return None
+        x_c, y_c = float(x_c), float(y_c)
+        a, b, theta = float(a), float(b), float(theta)
+        yy, xx = np.indices(shape, dtype=float)
+        dx = xx - x_c
+        dy = yy - y_c
+        ct, st = np.cos(theta), np.sin(theta)
+        x_rot = dx * ct + dy * st
+        y_rot = -dx * st + dy * ct
+        return (x_rot / a) ** 2 + (y_rot / b) ** 2 <= 1.0
+    raise ValueError(
+        f'center_mask_params must be length 3 (circle) or 5 (ellipse), '
+        f'got length {len(center_mask_params)}')
 
 class PSFFitter():
     ''' A class to perform PSF fitting. '''
@@ -184,7 +210,7 @@ def filter_psfphot_results(phot_result,
     # 128: fully masked source
     # 256: too few pixels for fitting
     #----------------------------
-    s_flags = ~(phot_result['flags'].value & (2+4+32+64+128+256)).astype(bool) 
+    s_flags = ~(phot_result['flags'].value & (2+4+32+64+128+256)).astype(bool)
     s = s_flags.copy()
     
     # --- quality cuts ---

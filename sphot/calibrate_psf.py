@@ -349,6 +349,102 @@ def _per_source_residual_score_multi(
     return total / max(n_pix, 1)
 
 
+def _score_blur_candidate_residual(
+    psf_cand_oversampled, psf_oversample, psf_sigma_cand,
+    data, phot, s_pass, *, bkg_std, K=30,
+    neighbor_pad=4.0, max_neighbors=15,
+):
+    """Score a bootstrap blur candidate by median per-anchor stamp
+    residual MSE, normalized by bkg_std² so candidates with different
+    PSF widths produce comparable numbers.
+
+    Picks the top-K brightest passing sources as anchors. Each stamp
+    is half-size = max(8, ceil(3·psf_sigma_cand)) so the wings fit
+    inside; design matrix includes neighbour columns within
+    `half + neighbor_pad` data px (same pattern as
+    _per_source_residual_score_multi) so blended neighbours don't
+    pollute the score.
+
+    Returns np.inf when there aren't enough usable anchors to score
+    reliably — bootstrap's min-selection then naturally rejects that
+    candidate.
+    """
+    if phot is None or len(phot) == 0:
+        return float('inf')
+    s_pass = np.asarray(s_pass, dtype=bool)
+    if s_pass.sum() < 1:
+        return float('inf')
+    x_all = np.asarray(phot['x_fit'], dtype=float)
+    y_all = np.asarray(phot['y_fit'], dtype=float)
+    f_all = np.asarray(phot['flux_fit'], dtype=float)
+    finite = np.isfinite(x_all) & np.isfinite(y_all) & np.isfinite(f_all)
+    pass_finite = s_pass & finite
+    if pass_finite.sum() < 1:
+        return float('inf')
+    x_p = x_all[pass_finite]
+    y_p = y_all[pass_finite]
+    f_p = f_all[pass_finite]
+    order = np.argsort(-f_p)[:K]
+    x_anchor = x_p[order]
+    y_anchor = y_p[order]
+    # All passing sources (with their flux) act as the neighbour pool
+    # for the design matrix.
+    all_x = x_p
+    all_y = y_p
+    all_flux = f_p
+    half = max(8, int(np.ceil(3.0 * float(psf_sigma_cand))))
+    H, W = data.shape
+    yy0, xx0 = np.indices((2 * half + 1, 2 * half + 1), dtype=float)
+    radius = float(half) + float(neighbor_pad)
+    radius2 = radius * radius
+    evaluate_psf = _make_psf_evaluator(psf_cand_oversampled, psf_oversample)
+    bkg_var = max(float(bkg_std) ** 2, 1e-30)
+    per_source = []
+    for x_a, y_a in zip(x_anchor, y_anchor):
+        ix = int(round(x_a)); iy = int(round(y_a))
+        if (ix - half < 0 or iy - half < 0
+                or ix + half + 1 > W or iy + half + 1 > H):
+            continue
+        sy = slice(iy - half, iy + half + 1)
+        sx = slice(ix - half, ix + half + 1)
+        stamp = np.asarray(data[sy, sx], dtype=float)
+        finite_st = np.isfinite(stamp)
+        if not finite_st.any():
+            continue
+        if not finite_st.all():
+            stamp = np.where(finite_st, stamp, 0.0)
+        xx = xx0 + (ix - half)
+        yy = yy0 + (iy - half)
+        d2 = (all_x - x_a) ** 2 + (all_y - y_a) ** 2
+        in_range = d2 <= radius2
+        nx = all_x[in_range]; ny = all_y[in_range]
+        if len(nx) > max_neighbors:
+            order_n = np.argsort(-all_flux[in_range])[:max_neighbors]
+            nx = nx[order_n]; ny = ny[order_n]
+        n_n = len(nx)
+        if n_n == 0:
+            nx = np.array([x_a]); ny = np.array([y_a]); n_n = 1
+        L = np.empty((stamp.size, n_n + 1), dtype=float)
+        for j in range(n_n):
+            mj = evaluate_psf(xx, yy, nx[j], ny[j])
+            mj = np.where(np.isfinite(mj), mj, 0.0)
+            L[:, j] = mj.ravel()
+        L[:, -1] = 1.0
+        finite_flat = finite_st.ravel().astype(float)
+        L_w = L * finite_flat[:, None]
+        b_w = stamp.ravel() * finite_flat
+        try:
+            params, *_ = np.linalg.lstsq(L_w, b_w, rcond=None)
+            resid = b_w - L_w @ params
+        except Exception:
+            continue
+        n_pix_eff = max(int(finite_st.sum()), 1)
+        per_source.append(float(np.sum(resid * resid)) / n_pix_eff)
+    if len(per_source) < 1:
+        return float('inf')
+    return float(np.nanmedian(per_source)) / bkg_var
+
+
 def _per_source_residual_score(
     K_data, library_psf_oversampled, psf_oversample,
     data, x_arr, y_arr, flux_arr, half=8,
@@ -785,6 +881,7 @@ def _bootstrap_blur(
     in place. Returns the chosen blur, or None if all attempts fail.
     """
     from .psf import filter_psfphot_results
+    from .data import _calc_psf_sigma
     from photutils.background import MADStdBackgroundRMS
     from astropy.convolution import convolve as ap_convolve, Gaussian2DKernel
 
@@ -792,7 +889,6 @@ def _bootstrap_blur(
                          dtype=float)
     library = _normalize_psf(library)
     psf_oversample = int(cutoutdata.psf_oversample)
-    psf_sigma = float(cutoutdata.psf_sigma)
     data = np.asarray(cutoutdata.sersic_residual)
     bkg_std = float(MADStdBackgroundRMS()(np.nan_to_num(data, nan=0.0)))
 
@@ -810,19 +906,27 @@ def _bootstrap_blur(
                     warnings.simplefilter('ignore')
                     psf_cand = ap_convolve(psf_cand, Gaussian2DKernel(cand))
                 psf_cand = _normalize_psf(psf_cand)
+            # Recompute psf_sigma from THIS candidate PSF. The library's
+            # Gaussian-fit sigma is set by the narrow diffraction core
+            # and stays narrow even after substantial blur unless we
+            # re-fit. Without this, DAO's fwhm input never widens and
+            # narrow-core filters (F277W, F090W) detect 0 sources at
+            # every candidate.
+            psf_sigma_cand = float(
+                _calc_psf_sigma(psf_cand, psf_oversample))
             try:
                 phot, _ = _single_pass_phot(
-                    data, psf_cand, psf_oversample, psf_sigma,
+                    data, psf_cand, psf_oversample, psf_sigma_cand,
                     mask=mask)
             except Exception as e:
                 log(f'[bootstrap_blur] blur={cand:.2f}: phot error: {e}')
-                attempts.append((cand, 0))
+                attempts.append((cand, 0, float('inf')))
                 if on_progress is not None:
                     try: on_progress()
                     except Exception: pass
                 continue
             if phot is None or len(phot) == 0:
-                attempts.append((cand, 0))
+                attempts.append((cand, 0, float('inf')))
                 log(f'[bootstrap_blur] blur={cand:.2f}: 0 detections')
                 if on_progress is not None:
                     try: on_progress()
@@ -830,20 +934,36 @@ def _bootstrap_blur(
                 continue
             try:
                 s_pass, _ = filter_psfphot_results(phot, bkg_std=bkg_std)
-                n_pass = int(np.asarray(s_pass).sum())
+                s_pass = np.asarray(s_pass)
+                n_pass = int(s_pass.sum())
             except Exception:
+                s_pass = np.ones(len(phot), dtype=bool)
                 n_pass = int(len(phot))
-            attempts.append((cand, n_pass))
-            log(f'[bootstrap_blur] blur={cand:.2f}: n_pass={n_pass}')
+            # Per-anchor stamp-residual MSE on top-K passing sources.
+            # Replaces the legacy n_pass score, which monotonically
+            # favored wider blurs (a wide Gaussian's wings absorb the
+            # un-modelled galaxy disk residual, so MORE detections
+            # "pass" quality cuts at large blurs even though they're
+            # actually fitting extended structure, not point sources).
+            # MSE rewards fits that actually subtract a star cleanly:
+            # real sources -> low residual; structure peaks -> high.
+            score = _score_blur_candidate_residual(
+                psf_cand, psf_oversample, psf_sigma_cand,
+                data, phot, s_pass, bkg_std=bkg_std, K=30)
+            attempts.append((cand, n_pass, score))
+            log(f'[bootstrap_blur] blur={cand:.2f}: n_pass={n_pass}, '
+                f'residual_MSE={score:.4g}')
             if on_progress is not None:
                 try: on_progress()
                 except Exception: pass
 
-        # any positive yield?
-        positive = [(c, n) for c, n in attempts if n > 0]
-        if positive:
-            best, n_best = max(positive, key=lambda r: r[1])
-            log(f'[bootstrap_blur] chose blur={best:.2f} (n_pass={n_best})')
+        # Pick lowest residual MSE among candidates that produced a
+        # finite score (i.e., at least a few passing anchors to fit).
+        scored = [(c, n, s) for c, n, s in attempts if np.isfinite(s)]
+        if scored:
+            best, n_best, mse_best = min(scored, key=lambda r: r[2])
+            log(f'[bootstrap_blur] chose blur={best:.2f} '
+                f'(n_pass={n_best}, residual_MSE={mse_best:.4g})')
             try:
                 cutoutdata.blur_psf(float(best))
             except Exception as e:
@@ -949,30 +1069,92 @@ def calibrate_psf_step(
         np.nan_to_num(sersic_residual, nan=0.0)))
 
     # Build the center-exclusion mask used by the bootstrap blur scan,
-    # fwhm scan, and anchor selection. Radius is in units of psf_sigma
-    # (so a wider effective PSF gets a proportionally wider mask).
-    # Distinct from the iPSF mask `[psf].center_mask_r_pix` (data px).
+    # fwhm scan, and anchor selection. Radius is in units of the
+    # galaxy's own size: cd.galaxy_size_sersic when a Sersic fit has
+    # produced an r_eff, otherwise cd.galaxy_size (initial Gaussian
+    # σ-guess from prep). This is intentionally distinct from the iPSF
+    # mask in [psf] which is sized in PSF FWHM — the calibrator needs
+    # an aggressive mask that covers the whole bright galaxy region
+    # so Sersic-fit residuals don't slip through as fake sources.
     center_mask = None
     center_mask_params = None
     try:
         sp = cutoutdata.sersic_params_physical
         cm_factor = float(config.get('psf-calib', {}).get(
-            'center_mask_r_in_fwhm', 2.5))
+            'center_mask_r_in_galaxy_size', 1.5))
         if cm_factor > 0:
-            # Mask is sized in units of the EFFECTIVE PSF FWHM (not library
-            # psf_sigma). The Sersic-residual blob at the galaxy core scales
-            # with the convolved PSF, so library σ — which is sub-pixel for
-            # sharp filters — is way too small a unit.
-            cm_r = effective_fwhm_data_px(cutoutdata) * cm_factor
-            center_mask_params = [float(sp['x_0']), float(sp['y_0']), cm_r]
+            gsize = float(getattr(cutoutdata, 'galaxy_size_sersic',
+                                  cutoutdata.galaxy_size))
+            # Elliptical mask shaped by the Sersic ellip + theta so
+            # inclined galaxies aren't masked as a face-on circle.
+            # semi-major a = gsize × cm_factor (along Sersic +theta axis)
+            # semi-minor b = a × (1 - ellip)
+            # Caps the semi-major at 45% of the smaller residual axis;
+            # the semi-minor is scaled proportionally so the ellipse
+            # keeps its axis ratio under the cap.
+            a_uncapped = gsize * cm_factor
+            cap = 0.45 * float(min(sersic_residual.shape))
+            scale = min(1.0, cap / a_uncapped) if a_uncapped > 0 else 0.0
+            a = a_uncapped * scale
+            ellip = float(sp.get('ellip', 0.0))
+            ellip = max(0.0, min(0.99, ellip))
+            b = a * (1.0 - ellip)
+            theta = float(sp.get('theta', 0.0))
+            center_mask_params = [float(sp['x_0']), float(sp['y_0']),
+                                  a, b, theta]
             center_mask = _build_center_mask(sersic_residual.shape,
                                               center_mask_params)
     except Exception:
         center_mask = None
         center_mask_params = None
 
-    # 1. extract anchors from psf_table (already-fitted)
-    phot = cutoutdata.psf_table
+    # 1. extract anchors via a dedicated calibration photometry.
+    # The science psf_table comes from a position-PINNED final joint refit
+    # (xy_bounds≈0). Those pinned anchors are a poor, unstable input for the
+    # kernel fit: photutils flags ~every source with bit 32, and (more
+    # importantly) the pinned positions / smaller detection set drive the
+    # kernel width to its bound in sparse fields. So when
+    # [psf-calib].calib_xy_bounds is set we re-run a dedicated anchor
+    # photometry on sersic_residual with that RELAXED position bound —
+    # positions are free to refine to true centroids, the fits don't trip
+    # flag 32, and the kernel fit gets an accurate, stable anchor set. This
+    # is scoped to calibration only: cd.psf_table / psf_sub_data (the
+    # science products) are never written here, and the main iPSF fit is
+    # untouched.
+    calib_xy_bounds = config.get('psf-calib', {}).get('calib_xy_bounds', None)
+    if calib_xy_bounds is not None:
+        from .psf import iterative_psf_fitting
+        from photutils.psf import ImagePSF
+        anchor_psf_model = ImagePSF(
+            np.asarray(cutoutdata.psf, dtype=float), flux=1.0,
+            x_0=0, y_0=0, oversampling=psf_oversample, fill_value=0.0)
+        # Single low-threshold pass: the full high->low ladder early-exits
+        # on consecutive-empty high thresholds before reaching th_min where
+        # the sources are; the joint refit's own leftover-detection loop
+        # recovers fainter sources iteratively.
+        th_min = config['psf'].get('th_min', 1.5)
+        threshold_list = np.array([float(th_min)])
+        _saved_xyb = config['psf'].get('final_refit_xy_bounds', 0.0)
+        config['psf']['final_refit_xy_bounds'] = float(calib_xy_bounds)
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                # center_mask_params=None: iterative_psf_fitting's internal
+                # post-fit filter unpacks a 3-tuple and chokes on the
+                # 5-tuple elliptical form (silently zeroing the result). The
+                # calibrator re-applies its own elliptical mask below.
+                phot, _resid_calib = iterative_psf_fitting(
+                    sersic_residual, anchor_psf_model, psf_sigma,
+                    threshold_list=threshold_list,
+                    center_mask_params=None)
+        except Exception as _e:
+            log(f'[calibrate_psf_step] relaxed-bound anchor photometry '
+                f'failed: {_e}; falling back to cd.psf_table')
+            phot = cutoutdata.psf_table
+        finally:
+            config['psf']['final_refit_xy_bounds'] = _saved_xyb
+    else:
+        phot = cutoutdata.psf_table
     no_phot = phot is None or len(phot) == 0
     if not no_phot:
         try:
@@ -985,11 +1167,10 @@ def calibrate_psf_step(
         no_pass = True
 
     if no_phot or no_pass:
-        # iPSF found nothing usable. Run an expanding-range blur scan
-        # to recover a sensible PSF from the data; the next mainloop
-        # iter's iPSF will pick up the updated cd.psf.
-        log('[calibrate_psf_step] no usable photometry; running blur '
-            'bootstrap')
+        # iPSF produced no usable sources — run an expanding-range blur
+        # scan to recover a sensible PSF; next iter's iPSF picks it up.
+        log('[calibrate_psf_step] no usable photometry '
+            f'(n_phot={0 if no_phot else len(phot)}) -> blur bootstrap')
         bootstrap_grid = (0.0, 1.0, 2.0, 3.0, 5.0, 7.0, 10.0)
         if progress is not None:
             boot_task = progress.add_task(
@@ -1030,24 +1211,34 @@ def calibrate_psf_step(
     y = np.asarray(phot_pass['y_fit'], dtype=float)
     f = np.asarray(phot_pass['flux_fit'], dtype=float)
     valid = np.isfinite(x) & np.isfinite(y) & np.isfinite(f) & (f > 0)
-    # Drop any anchors that fall inside the centre-mask radius. iPSF
-    # already excludes them via PSFPhotometry's mask, but stale
-    # cd.psf_table from older runs may still carry such rows.
+    # Drop any anchors that fall inside the centre-mask. iPSF already
+    # excludes them via PSFPhotometry's mask, but stale cd.psf_table
+    # from older runs may still carry such rows. Matches the elliptical
+    # vs circular form used when the mask was built.
     if center_mask_params is not None:
-        x_c, y_c, r_c = center_mask_params
-        valid &= ((x - x_c) ** 2 + (y - y_c) ** 2 > r_c ** 2)
+        if len(center_mask_params) == 3:
+            x_c, y_c, r_c = center_mask_params
+            valid &= ((x - x_c) ** 2 + (y - y_c) ** 2 > r_c ** 2)
+        elif len(center_mask_params) == 5:
+            x_c, y_c, a_c, b_c, theta_c = center_mask_params
+            dx = x - x_c
+            dy = y - y_c
+            ct, st = np.cos(theta_c), np.sin(theta_c)
+            x_rot = dx * ct + dy * st
+            y_rot = -dx * st + dy * ct
+            valid &= (x_rot / a_c) ** 2 + (y_rot / b_c) ** 2 > 1.0
     x, y, f = x[valid], y[valid], f[valid]
     if len(x) == 0:
-        log('[calibrate_psf_step] all anchors invalid; skipping')
+        log('[calibrate_psf_step] no anchors outside mask; skipping')
         return None
-    # FULL passing list — used by the multi-source objective for
-    # neighbour lookup. Stays separate from the anchor sub-selection.
+    # Full anchor pool for the multi-source neighbour lookup; the top-K
+    # brightest are the fit anchors.
     all_x_pass = x.copy()
     all_y_pass = y.copy()
     all_flux_pass = f.copy()
     order = np.argsort(-f)[:K]
     x_anchor, y_anchor, f_anchor = x[order], y[order], f[order]
-    n_pass_input = int(s_pass.sum())
+    n_pass_input = int(len(x))
 
     # 2. kernel fit (per-source residual against sersic_residual)
     prev_params = getattr(cutoutdata, 'kernel_params', None)
@@ -1130,6 +1321,14 @@ def calibrate_psf_step(
         library_norm, psf_oversample, family, fit['params'],
         half=max(20, int(np.ceil(6.0 * psf_sigma))))
     cutoutdata.psf = new_psf
+    # Refresh cd.psf_sigma from the new effective PSF so downstream
+    # consumers (DAO fwhm, fit_shape, sky-annulus radii, grouper
+    # separation, dedup distance) see the calibrated width instead of
+    # the stale library Gaussian-fit. Update the local psf_sigma too so
+    # the rest of this function (empirical fwhm fit, anchor stamps,
+    # scan grid) operates on the calibrated value.
+    cutoutdata.calc_psf_sigma()
+    psf_sigma = float(cutoutdata.psf_sigma)
 
     # 4. skip-on-stable check (only honoured when the user opts in via
     # `[psf-calib].kernel_fit_skip_on_convergence`). Default off — the
