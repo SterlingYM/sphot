@@ -31,7 +31,8 @@ kernel_fit_stamp_half_min = 8              # min stamp half (px)
 kernel_fit_stamp_half_in_sigmaeff = 3.0    # adaptive: half = factor × √(psf_sigma² + σ_kernel²)
 kernel_fit_max_neighbors = 15              # max neighbour columns per stamp
 kernel_fit_neighbor_pad_pix = 4.0          # neighbour search radius beyond stamp (px)
-center_mask_r_in_fwhm = 2.5                # calibration centre mask radius (× empirical effective PSF FWHM); 0 disables
+center_mask_r_in_galaxy_size = 1.5         # calibration centre mask radius (× galaxy_size_sersic with fallback to galaxy_size); capped at 0.45×min(residual.shape); 0 disables
+calib_xy_bounds = 3.0                       # calibration re-runs a dedicated anchor photometry with this position bound (px) so the kernel fit gets free-centroid, flag-32-free anchors; science psf_table (xy_bounds≈0) is untouched. Unset/None disables (reuse cd.psf_table).
 
 # fwhm scan inner photometry: 'lm' (default photutils PSFPhotometry) or 'nnls'
 # (forced photometry at DAO positions, no SourceGrouper, no LM iters).

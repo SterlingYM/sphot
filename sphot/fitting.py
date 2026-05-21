@@ -275,6 +275,13 @@ class ModelFitter():
         self.cutoutdata.sersic_residual = sersic_residual
         self.cutoutdata.residual = residual_img
         self.cutoutdata.residual_masked = residual_masked
+        # Dynamic galaxy-size attribute consumed by the PSF calibrator's
+        # centre mask. Distinct from cd.galaxy_size (the prep-time
+        # Gaussian σ guess) so we don't break anything that depends on
+        # the static initial value.
+        self.cutoutdata.galaxy_size_sersic = float(
+            bestfit_sersic_params_physical.get('r_eff',
+                                                self.cutoutdata.galaxy_size))
         self.model.x0 = result.x
         save_bestfit_params(self.cutoutdata,bestfit_sersic_params_physical)
 
@@ -364,9 +371,12 @@ class ModelScaleFitter(ModelFitter):
         self.cutoutdata.sersic_params_physical = bestfit_sersic_params_physical
         self.cutoutdata.sersic_params = scaled_modelparams
         self.cutoutdata.sersic_modelimg = bestfit_img
-        self.cutoutdata.sersic_residual = sersic_residual 
+        self.cutoutdata.sersic_residual = sersic_residual
         self.cutoutdata.residual = residual_img
         self.cutoutdata.residual_masked = residual_masked
+        self.cutoutdata.galaxy_size_sersic = float(
+            bestfit_sersic_params_physical.get('r_eff',
+                                                self.cutoutdata.galaxy_size))
         self.model.x0 = result.x
         save_bestfit_params(self.cutoutdata,bestfit_sersic_params_physical)
         return self.cutoutdata

@@ -87,10 +87,16 @@ class CutoutData():
         ''' blur the PSF '''
         if psf_blurring is None:
             psf_blurring = self.psf_blurring
-        kernel = Gaussian2DKernel(psf_blurring)
         if not hasattr(self,'_psf_raw'):
             self._psf_raw = self.psf.copy()
-        self.psf = convolve(self._psf_raw, kernel)
+        if float(psf_blurring) <= 0:
+            # Gaussian2DKernel(0) is undefined; treat zero blur as
+            # "use the raw library PSF as-is". The bootstrap scan
+            # explicitly probes blur=0 and needs this path to be a no-op.
+            self.psf = self._psf_raw.copy()
+        else:
+            kernel = Gaussian2DKernel(psf_blurring)
+            self.psf = convolve(self._psf_raw, kernel)
         self.psf_blurring = psf_blurring
         self.fix_psf()
         self.calc_psf_sigma()
@@ -369,6 +375,10 @@ class MultiBandCutout():
                     for key,val in g_val.__dict__.items():
                         if key in TRANSIENT_CUTOUT_ATTRS:
                             continue
+                        if val is None:
+                            # h5py can't materialise data=None; skip
+                            # cleanly so the dataset is just absent.
+                            continue
                         try:
                             if isinstance(val,dict):
                                 json_str = json.dumps(val)
@@ -379,6 +389,8 @@ class MultiBandCutout():
                             logger.error(f'Error with {key}: {e}')
                             continue
                 else:
+                    if g_val is None:
+                        continue
                     try:
                         f.create_dataset(g_key,data=str_to_json(g_val))
                     except Exception as e:
