@@ -423,6 +423,20 @@ class IsoPhotApertures():
             order = np.argsort(x_finite)
             x_sorted = x_finite[order]
             y_sorted = y_finite[order]
+            # Need at least 2 finite, distinct x to construct the smoothing
+            # spline. `np.r_[True, np.diff(x_sorted)>0]` is always length
+            # max(1, len(x_sorted)), so an empty x_sorted gives a length-1
+            # mask that can't index an empty array -> generic IndexError.
+            # Bail out with a typed error so the caller can skip the cutout.
+            if x_sorted.size < 2:
+                # local import: aperture.py is imported by data.py, so a
+                # module-level `from .data import ...` would be circular.
+                from .data import DegenerateCutoutError
+                raise DegenerateCutoutError(
+                    f'get_aper_at: insufficient finite ({x_attr}, petro_idx) '
+                    f'samples ({x_sorted.size}) to construct the interpolator; '
+                    f'isophote sampling is too degenerate.'
+                )
             unique_mask = np.r_[True, np.diff(x_sorted) > 0]
             interp_func = csaps(x_sorted[unique_mask],
                                 y_sorted[unique_mask],

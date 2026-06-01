@@ -8,6 +8,7 @@ import logging
 from tqdm.auto import tqdm
 import h5py
 import json
+import warnings
 
 from scipy.optimize import minimize, leastsq
 from scipy import stats
@@ -35,7 +36,19 @@ class DebugException(Exception):
     def __init__(self, message, debug_var):
         super().__init__(message)
         self.debug_var = debug_var
-        
+
+
+class DegenerateCutoutError(ValueError):
+    """Raised when a CutoutData step cannot proceed because the cutout is
+    too degenerate (e.g. mostly-NaN data, insufficient finite isophote
+    samples, or a required intermediate attribute hasn't been produced
+    yet). Subclass of `ValueError` so existing `except ValueError:`
+    handlers keep working; SLURM array tasks can catch this specifically
+    to skip + record the cutout instead of aborting.
+    """
+    pass
+
+
 
 def calc_mag(counts_Mjy_per_Sr,errors_Mjy_per_Sr=None,pixel_scale=0.03):
     PIXAR_SR = ((pixel_scale*u.arcsec)**2).to(u.sr).value
@@ -187,12 +200,23 @@ class CutoutData():
             bounds = ([shape/2 - center_slack*shape,0,0,-np.inf],
                       [shape/2 + center_slack*shape,shape,np.inf,np.inf])
 
-            # clip pixels when the counts are too low
-            lower_clip = np.nanpercentile(means_smooth,
-                                          clip_lower_counts_percentile)
-            s2 = means_smooth > lower_clip
-            s2 = s2 & np.isfinite(means_smooth)
-            
+            # clip pixels when the counts are too low. `nanpercentile` of an
+            # all-NaN means_smooth returns NaN, which makes the `>` comparison
+            # all-False and `s2` empty -> `means_smooth[s2].max()` would raise
+            # a generic "zero-size array" ValueError deep in numpy. Catch it
+            # here as DegenerateCutoutError so SLURM callers can skip cleanly.
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', category=RuntimeWarning)
+                lower_clip = np.nanpercentile(means_smooth,
+                                              clip_lower_counts_percentile)
+            s2 = (means_smooth > lower_clip) & np.isfinite(means_smooth)
+            if s2.sum() == 0:
+                raise DegenerateCutoutError(
+                    f'init_size_guess: no usable smoothed-profile samples '
+                    f'on axis={axis} (means_smooth all-NaN or below clip); '
+                    f'cutout is too degenerate for a Gaussian size guess.'
+                )
+
             x0_guess = axis_pixels.max()/2
             p0 = [x0_guess,sigma_guess, # center, sigma,
                   means_smooth[s2].max()-means_smooth[s2].min(), # amplitude
@@ -256,7 +280,23 @@ class CutoutData():
         
     def remove_sky(self,fit_to='residual_masked',remove_from='psf_sub_data',**kwargs):
         N_repeat = kwargs.get('repeat',1)
-        
+
+        # Validate `remove_from` attributes up-front. The default
+        # 'psf_sub_data' only exists after PSFFitter.fit has run; callers in
+        # the main loop sometimes invoke remove_sky before that (e.g. when an
+        # earlier stage like the isophote fit fails silently and the pipeline
+        # tries to continue). Detect this and raise a typed error instead of
+        # letting `getattr` fall through with a generic AttributeError so the
+        # pipeline can catch + skip the cutout.
+        attrs = [str(a) for a in np.atleast_1d(np.squeeze(remove_from))]
+        missing = [attr for attr in attrs if not hasattr(self, attr)]
+        if missing:
+            raise DegenerateCutoutError(
+                f'remove_sky: requested remove_from attr(s) {missing} not yet '
+                f'set on CutoutData (likely an earlier pipeline stage failed '
+                f'or has not run). Cannot subtract sky.'
+            )
+
         # sky model = sum of all sky models fitted during the iterations
         sky_model_total = np.zeros_like(self.data)
         for _ in range(N_repeat):
@@ -264,7 +304,7 @@ class CutoutData():
             sky_model_total += self.sky_model
             for attr in np.atleast_1d(np.squeeze(remove_from)):
                 _data = getattr(self,attr)
-                setattr(self,attr,_data-self.sky_model)    
+                setattr(self,attr,_data-self.sky_model)
         self.sky_model = sky_model_total
     
     def fit_sky(self,fit_to='residual_masked',poly_deg=1,
