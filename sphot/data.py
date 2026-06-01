@@ -8,6 +8,7 @@ import logging
 from tqdm.auto import tqdm
 import h5py
 import json
+import warnings
 
 from scipy.optimize import minimize, leastsq
 from scipy import stats
@@ -35,7 +36,19 @@ class DebugException(Exception):
     def __init__(self, message, debug_var):
         super().__init__(message)
         self.debug_var = debug_var
-        
+
+
+class DegenerateCutoutError(ValueError):
+    """Raised when a CutoutData step cannot proceed because the cutout is
+    too degenerate (e.g. mostly-NaN data, insufficient finite isophote
+    samples, or a required intermediate attribute hasn't been produced
+    yet). Subclass of `ValueError` so existing `except ValueError:`
+    handlers keep working; SLURM array tasks can catch this specifically
+    to skip + record the cutout instead of aborting.
+    """
+    pass
+
+
 
 def calc_mag(counts_Mjy_per_Sr,errors_Mjy_per_Sr=None,pixel_scale=0.03):
     PIXAR_SR = ((pixel_scale*u.arcsec)**2).to(u.sr).value
@@ -187,12 +200,23 @@ class CutoutData():
             bounds = ([shape/2 - center_slack*shape,0,0,-np.inf],
                       [shape/2 + center_slack*shape,shape,np.inf,np.inf])
 
-            # clip pixels when the counts are too low
-            lower_clip = np.nanpercentile(means_smooth,
-                                          clip_lower_counts_percentile)
-            s2 = means_smooth > lower_clip
-            s2 = s2 & np.isfinite(means_smooth)
-            
+            # clip pixels when the counts are too low. `nanpercentile` of an
+            # all-NaN means_smooth returns NaN, which makes the `>` comparison
+            # all-False and `s2` empty -> `means_smooth[s2].max()` would raise
+            # a generic "zero-size array" ValueError deep in numpy. Catch it
+            # here as DegenerateCutoutError so SLURM callers can skip cleanly.
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', category=RuntimeWarning)
+                lower_clip = np.nanpercentile(means_smooth,
+                                              clip_lower_counts_percentile)
+            s2 = (means_smooth > lower_clip) & np.isfinite(means_smooth)
+            if s2.sum() == 0:
+                raise DegenerateCutoutError(
+                    f'init_size_guess: no usable smoothed-profile samples '
+                    f'on axis={axis} (means_smooth all-NaN or below clip); '
+                    f'cutout is too degenerate for a Gaussian size guess.'
+                )
+
             x0_guess = axis_pixels.max()/2
             p0 = [x0_guess,sigma_guess, # center, sigma,
                   means_smooth[s2].max()-means_smooth[s2].min(), # amplitude
