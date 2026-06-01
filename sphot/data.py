@@ -280,7 +280,23 @@ class CutoutData():
         
     def remove_sky(self,fit_to='residual_masked',remove_from='psf_sub_data',**kwargs):
         N_repeat = kwargs.get('repeat',1)
-        
+
+        # Validate `remove_from` attributes up-front. The default
+        # 'psf_sub_data' only exists after PSFFitter.fit has run; callers in
+        # the main loop sometimes invoke remove_sky before that (e.g. when an
+        # earlier stage like the isophote fit fails silently and the pipeline
+        # tries to continue). Detect this and raise a typed error instead of
+        # letting `getattr` fall through with a generic AttributeError so the
+        # pipeline can catch + skip the cutout.
+        attrs = [str(a) for a in np.atleast_1d(np.squeeze(remove_from))]
+        missing = [attr for attr in attrs if not hasattr(self, attr)]
+        if missing:
+            raise DegenerateCutoutError(
+                f'remove_sky: requested remove_from attr(s) {missing} not yet '
+                f'set on CutoutData (likely an earlier pipeline stage failed '
+                f'or has not run). Cannot subtract sky.'
+            )
+
         # sky model = sum of all sky models fitted during the iterations
         sky_model_total = np.zeros_like(self.data)
         for _ in range(N_repeat):
@@ -288,7 +304,7 @@ class CutoutData():
             sky_model_total += self.sky_model
             for attr in np.atleast_1d(np.squeeze(remove_from)):
                 _data = getattr(self,attr)
-                setattr(self,attr,_data-self.sky_model)    
+                setattr(self,attr,_data-self.sky_model)
         self.sky_model = sky_model_total
     
     def fit_sky(self,fit_to='residual_masked',poly_deg=1,
