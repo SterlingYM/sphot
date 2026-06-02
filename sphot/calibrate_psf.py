@@ -1070,12 +1070,16 @@ def calibrate_psf_step(
 
     # Build the center-exclusion mask used by the bootstrap blur scan,
     # fwhm scan, and anchor selection. Radius is in units of the
-    # galaxy's own size: cd.galaxy_size_sersic when a Sersic fit has
-    # produced an r_eff, otherwise cd.galaxy_size (initial Gaussian
-    # σ-guess from prep). This is intentionally distinct from the iPSF
-    # mask in [psf] which is sized in PSF FWHM — the calibrator needs
-    # an aggressive mask that covers the whole bright galaxy region
-    # so Sersic-fit residuals don't slip through as fake sources.
+    # galaxy's own size: cd.galaxy_size (the initial Gaussian σ-guess
+    # from prep), intentionally NOT cd.galaxy_size_sersic. A runaway
+    # Sersic fit can return r_eff comparable to the cutout extent —
+    # the resulting mask would saturate at the 0.45×min(shape) cap and
+    # swallow most of the cutout, starving the kernel fit of anchors.
+    # galaxy_size is a robust Gaussian σ estimate that doesn't blow up.
+    # This is intentionally distinct from the iPSF mask in [psf] which
+    # is sized in PSF FWHM — the calibrator needs an aggressive mask
+    # that covers the whole bright galaxy region so Sersic-fit
+    # residuals don't slip through as fake sources.
     center_mask = None
     center_mask_params = None
     try:
@@ -1083,8 +1087,7 @@ def calibrate_psf_step(
         cm_factor = float(config.get('psf-calib', {}).get(
             'center_mask_r_in_galaxy_size', 1.5))
         if cm_factor > 0:
-            gsize = float(getattr(cutoutdata, 'galaxy_size_sersic',
-                                  cutoutdata.galaxy_size))
+            gsize = float(cutoutdata.galaxy_size)
             # Elliptical mask shaped by the Sersic ellip + theta so
             # inclined galaxies aren't masked as a face-on circle.
             # semi-major a = gsize × cm_factor (along Sersic +theta axis)
