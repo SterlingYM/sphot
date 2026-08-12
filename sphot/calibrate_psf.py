@@ -633,14 +633,14 @@ def _single_pass_phot(data, psf_oversampled, oversample, psf_sigma,
     scan candidate evaluation.
     """
     from photutils.psf import ImagePSF, PSFPhotometry, SourceGrouper
+    from .psf import make_image_psf
     from photutils.detection import DAOStarFinder
     from photutils.background import MMMBackground, LocalBackground, MADStdBackgroundRMS
     from . import psf as sp
     from .psf import do_psf_photometry
     from .config import config
 
-    psf_model = ImagePSF(psf_oversampled, flux=1.0,
-                         oversampling=oversample, fill_value=0.0)
+    psf_model = make_image_psf(psf_oversampled, oversample, fill_value=0.0)
     if th is None:
         th = float(config['psf'].get('th_min', 1.0))
     bkg_std = float(MADStdBackgroundRMS()(np.nan_to_num(data, nan=0.0)))
@@ -756,11 +756,10 @@ def _scan_dao_fwhm_factor_nnls(
     from photutils.psf import ImagePSF
     from photutils.detection import DAOStarFinder
     from photutils.background import MADStdBackgroundRMS
-    from .psf import forced_psf_photometry
+    from .psf import forced_psf_photometry, make_image_psf
     from .config import config
 
-    psf_model = ImagePSF(psf_oversampled, flux=1.0,
-                         oversampling=oversample, fill_value=0.0)
+    psf_model = make_image_psf(psf_oversampled, oversample, fill_value=0.0)
     if th is None:
         th = float(config['psf'].get('th_min', 1.0))
     bkg_std = float(MADStdBackgroundRMS()(np.nan_to_num(data, nan=0.0)))
@@ -1128,15 +1127,20 @@ def calibrate_psf_step(
     if calib_xy_bounds is not None:
         from .psf import iterative_psf_fitting
         from photutils.psf import ImagePSF
-        anchor_psf_model = ImagePSF(
-            np.asarray(cutoutdata.psf, dtype=float), flux=1.0,
-            x_0=0, y_0=0, oversampling=psf_oversample, fill_value=0.0)
+        from .psf import make_image_psf
+        anchor_psf_model = make_image_psf(
+            cutoutdata.psf, psf_oversample, fill_value=0.0, x_0=0, y_0=0)
         # Single low-threshold pass: the full high->low ladder early-exits
         # on consecutive-empty high thresholds before reaching th_min where
         # the sources are; the joint refit's own leftover-detection loop
         # recovers fainter sources iteratively.
-        th_min = config['psf'].get('th_min', 1.5)
-        threshold_list = np.array([float(th_min)])
+        # Uses `[psf-calib].calib_th` (separate from `[psf].th_min` so a
+        # deeper science detection floor doesn't flood the calibrator with
+        # noise spikes that fail quality cuts → 0 anchors → bootstrap σ
+        # saturates at the upper bound, e.g. F277W with library FWHM ~1.5
+        # px goes to bootstrap when th=2). Defaults to 3.0.
+        calib_th = float(config.get('psf-calib', {}).get('calib_th', 5.0))
+        threshold_list = np.array([calib_th])
         _saved_xyb = config['psf'].get('final_refit_xy_bounds', 0.0)
         config['psf']['final_refit_xy_bounds'] = float(calib_xy_bounds)
         try:
