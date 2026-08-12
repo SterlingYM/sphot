@@ -111,8 +111,20 @@ def _maybe_recalibrate_psf(cutoutdata, progress=None,
     cfg = config.get('psf-calib', {})
     if not cfg.get('in_mainloop', False):
         return
+    # Freeze gate: once the calibrated kernel has stopped moving between
+    # consecutive main-loop iterations, further recalibration only re-derives
+    # the same kernel from the same (converged) sersic_residual at the cost
+    # of a full anchor re-photometry per iteration. Same convergence
+    # principle as the main loop's Sersic early-exit: below the stability
+    # threshold, iterating is measurement noise, not information.
+    freeze = bool(cfg.get('freeze_when_stable', True))
+    if freeze and getattr(cutoutdata, '_calib_frozen', False):
+        logger.info('PSF calibration frozen (kernel stable); '
+                    'skipping recalibration this iteration')
+        return
+    prev_kernel = getattr(cutoutdata, '_calibrate_psf_prev_kernel', None)
     try:
-        calibrate_psf_step(
+        result = calibrate_psf_step(
             cutoutdata,
             family=cfg.get('kernel_family', 'gaussian'),
             K=int(cfg.get('kernel_anchor_K', 30)),
@@ -128,6 +140,27 @@ def _maybe_recalibrate_psf(cutoutdata, progress=None,
                        f'{traceback.format_exc()}')
         return
     _refresh_sersic_modelimg(cutoutdata, fit_complex_model=fit_complex_model)
+    if freeze:
+        from .calibrate_psf import _kernels_close
+        threshold = float(cfg.get('kernel_skip_threshold', 1e-3))
+        patience = int(cfg.get('freeze_patience', 2))
+        new_kernel = getattr(cutoutdata, '_calibrate_psf_prev_kernel', None)
+        # A bootstrap pass (kernel_params=None) or a failed step resets the
+        # streak — the kernel state just changed discontinuously.
+        calibrated = (result is not None
+                      and result.get('kernel_params') is not None)
+        if calibrated and _kernels_close(new_kernel, prev_kernel,
+                                          threshold=threshold):
+            stable = int(getattr(cutoutdata, '_calib_stable_count', 0)) + 1
+        else:
+            stable = 0
+        cutoutdata._calib_stable_count = stable
+        if stable >= patience:
+            cutoutdata._calib_frozen = True
+            logger.info(
+                f'PSF calibration: kernel stable for {stable} consecutive '
+                f'iterations (RMS delta < {threshold}); freezing '
+                f'recalibration for the remaining main-loop iterations.')
 
 
 def _params_converged(prev, curr, atol):
@@ -198,6 +231,8 @@ def run_basefit(galaxy,base_filter,
     cutoutdata = galaxy.images[base_filter]
     for attrname in ['sersic_modelimg','psf_modelimg']:
         setattr(cutoutdata,attrname,0) # remove previous results
+    cutoutdata._calib_frozen = False
+    cutoutdata._calib_stable_count = 0
     cutoutdata.perform_bkg_stats()
     # Apply user-supplied blur when given; otherwise leave cd.psf as
     # the library and let the calibrator's bootstrap pick a blur from
@@ -327,7 +362,9 @@ def run_scalefit(galaxy,filtername,base_params,allow_refit,
     cutoutdata = galaxy.images[filtername]
     for attrname in ['sersic_modelimg','psf_modelimg']:
         setattr(cutoutdata,attrname,0) # remove previous results
-        
+    cutoutdata._calib_frozen = False
+    cutoutdata._calib_stable_count = 0
+
     # 1. basic statistics
     cutoutdata.perform_bkg_stats()
     if blur_psf is not None:
@@ -487,6 +524,8 @@ def run_scalefit_forced(galaxy, filtername, base_filter, base_params,
     cutoutdata = galaxy.images[filtername]
     for attrname in ['sersic_modelimg', 'psf_modelimg']:
         setattr(cutoutdata, attrname, 0)
+    cutoutdata._calib_frozen = False
+    cutoutdata._calib_stable_count = 0
     cutoutdata.perform_bkg_stats()
     if blur_psf is not None:
         cutoutdata.blur_psf(blur_psf)

@@ -24,7 +24,9 @@ in_mainloop = true                     # per-iter kernel recalibration (set fals
 kernel_family = 'gaussian'             # 'gaussian' | 'moffat' | 'drizzle'
 kernel_anchor_K = 30                   # # of brightest anchors used in the kernel fit
 kernel_fit_skip_on_convergence = false # if true, skip fwhm scan once kernel L2 stable
-kernel_skip_threshold = 1e-3           # L2 distance below which the scan is skipped (only when above is true)
+kernel_skip_threshold = 1e-3           # kernel RMS distance defining "stable" (used by the scan skip above AND the freeze gate below)
+freeze_when_stable = true              # once the kernel is stable for freeze_patience consecutive iters, skip recalibration (incl. the anchor re-photometry) for the rest of the main loop
+freeze_patience = 2                    # consecutive stable iterations required before freezing
 
 kernel_fit_objective = 'multi_source'      # 'multi_source' (NNLS lstsq) | 'single_source' (legacy LM)
 kernel_fit_stamp_half_min = 8              # min stamp half (px)
