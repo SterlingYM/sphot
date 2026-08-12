@@ -127,6 +127,34 @@ class PSFFitter():
         th_iter = config['psf'].get('th_iter',10)
         threshold_list = np.geomspace(th_min, th_max, num=th_iter)[::-1]
 
+        # Warm start. The ladder's job is to DISCOVER sources by peeling
+        # bright ones off so faint neighbours emerge. Between main-loop
+        # iterations only the Sersic model changes, so the catalogue found
+        # last iteration is still very nearly the right answer — rerunning
+        # ~8 full detection passes to rediscover it is the single biggest
+        # cost in the fit. Instead, seed the joint refit with the previous
+        # catalogue and let its own leftover-detection loop pick up what
+        # moved. `ladder_full_every` forces a full ladder every Nth call so
+        # any drift is re-anchored (0 = warm start forever after the first).
+        init_sources = None
+        n_call = int(getattr(self.cutoutdata, '_ipsf_call_count', 0))
+        if bool(config['psf'].get('ladder_warm_start', False)):
+            prev = getattr(self.cutoutdata, 'psf_table', None)
+            full_every = int(config['psf'].get('ladder_full_every', 3))
+            due_full = (n_call == 0 or
+                        (full_every > 0 and n_call % full_every == 0))
+            if prev is not None and len(prev) > 0 and not due_full:
+                names = (prev.dtype.names
+                         if hasattr(prev, 'dtype') and prev.dtype.names
+                         else prev.colnames)
+                if all(c in names for c in ('x_fit', 'y_fit', 'flux_fit')):
+                    init_sources = QTable()
+                    init_sources['x'] = np.asarray(prev['x_fit'], dtype=float)
+                    init_sources['y'] = np.asarray(prev['y_fit'], dtype=float)
+                    init_sources['flux'] = np.asarray(prev['flux_fit'],
+                                                      dtype=float)
+        self.cutoutdata._ipsf_call_count = n_call + 1
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             psf_table, resid = iterative_psf_fitting(
@@ -135,6 +163,7 @@ class PSFFitter():
                 self.psf_sigma,
                 threshold_list = threshold_list,
                 center_mask_params=center_mask_params,
+                init_sources=init_sources,
                 **kwargs)
 
         if resid is None:
@@ -484,6 +513,7 @@ def iterative_psf_fitting(data,psf_model,psf_sigma,
                           threshold_list,
                           progress=None,
                           progress_text='Running iPSF...',
+                          init_sources=None,
                           **kwargs):
     ''' Iteratively run do_psf_photometry() with different threshold levels.
     This function is useful for crowded fields, where a single threshold level may fail.
@@ -541,6 +571,28 @@ def iterative_psf_fitting(data,psf_model,psf_sigma,
     refit_bkg = config['psf'].get('bkg_refit_per_iteration', True)
     bkg_floor_factor = float(config['psf'].get('bkg_floor_factor', 0.3))
     initial_bkg_std = float(bkg_std)
+
+    # Warm start: skip discovery entirely and hand the previous catalogue
+    # straight to the joint refit (which re-fits every source against the
+    # current image and runs its own leftover detection for anything new).
+    if init_sources is not None and len(init_sources) > 0:
+        try:
+            new_phot, new_resid = _final_joint_refit(
+                data_bksub, data_error, bkg_std,
+                psf_model, psf_sigma, None,
+                init_override=init_sources, progress=progress,
+                **{k: v for k, v in kwargs.items() if k != 'progress'})
+        except Exception as e:
+            if config['psf']['raise_error']:
+                raise
+            logger.warning(f'warm-start refit failed: {e}; '
+                           f'falling back to the full ladder')
+            new_phot, new_resid = None, None
+        if new_phot is not None and new_resid is not None:
+            logger.info(f'iPSF warm start: {len(init_sources)} seed sources '
+                        f'-> {len(new_phot)} fitted (ladder skipped)')
+            psf_modelimg_all = data_bksub - new_resid
+            return new_phot, data.copy() - psf_modelimg_all
 
     # loop -- repeat PSF subtraction
     if progress is not None:
@@ -898,9 +950,43 @@ def run_forced_photometry_on_cutout(cutoutdata, x_init, y_init,
     return cutoutdata
 
 
+def _psf_support_shape(psf_model):
+    """Model footprint in DATA px: the PSF image size divided by its
+    oversampling, rounded up to odd. An ImagePSF is exactly zero outside
+    this footprint (fill_value=0), so rendering with this `model_shape`
+    reproduces photutils' own model image bit-for-bit rather than
+    truncating the wings like the smaller `modelimg_render_shape`.
+    """
+    try:
+        d = np.asarray(psf_model.data)
+        ovs = np.atleast_1d(np.asarray(psf_model.oversampling, dtype=float))
+        ny = int(np.ceil(d.shape[0] / float(ovs[0])))
+        nx = int(np.ceil(d.shape[1] / float(ovs[-1])))
+    except Exception:
+        return tuple(config['psf']['modelimg_render_shape'])
+    ny += (ny + 1) % 2
+    nx += (nx + 1) % 2
+    return (max(ny, 3), max(nx, 3))
+
+
+def _render_phot_model(psf_model, phot, shape, model_shape):
+    ''' Sum of fitted PSF models for every row of `phot`. Matches
+    `PSFPhotometry.make_residual_image`'s model to float roundoff when
+    `model_shape` is the full PSF support (see `_psf_support_shape`).
+    '''
+    x = np.asarray(phot['x_fit'], dtype=float)
+    y = np.asarray(phot['y_fit'], dtype=float)
+    f = np.asarray(phot['flux_fit'], dtype=float)
+    ok = np.isfinite(x) & np.isfinite(y) & np.isfinite(f)
+    if not ok.any():
+        return np.zeros(shape, dtype=float)
+    return _render_unit_image(psf_model, x[ok], y[ok], f[ok],
+                              shape, model_shape)
+
+
 def _final_joint_refit(data_bksub, data_error, bkg_std,
                        psf_model, psf_sigma, phot_result,
-                       progress=None, **kwargs):
+                       progress=None, init_override=None, **kwargs):
     ''' Iterative joint refit + leftover-source detection.
 
     Each iteration:
@@ -931,16 +1017,26 @@ def _final_joint_refit(data_bksub, data_error, bkg_std,
     '''
     center_mask_params = kwargs.get('center_mask_params', None)
     center_mask = _build_center_mask(data_bksub.shape, center_mask_params)
-    s_pass, _ = filter_psfphot_results(
-        phot_result, center_mask_params=center_mask_params,
-        bkg_std=bkg_std)
-    if int(s_pass.sum()) == 0:
-        return None, None
+    if init_override is not None:
+        # Warm start: the seed catalogue already passed quality cuts when
+        # it was built, so it is NOT re-filtered here — re-applying the
+        # cuts every iteration would compound attrition and bleed sources
+        # out of the catalogue over the main loop.
+        init = init_override
+    else:
+        s_pass, _ = filter_psfphot_results(
+            phot_result, center_mask_params=center_mask_params,
+            bkg_std=bkg_std)
+        if int(s_pass.sum()) == 0:
+            return None, None
 
-    init = QTable()
-    init['x'] = np.asarray(phot_result['x_fit'][s_pass], dtype=float)
-    init['y'] = np.asarray(phot_result['y_fit'][s_pass], dtype=float)
-    init['flux'] = np.asarray(phot_result['flux_fit'][s_pass], dtype=float)
+        init = QTable()
+        init['x'] = np.asarray(phot_result['x_fit'][s_pass], dtype=float)
+        init['y'] = np.asarray(phot_result['y_fit'][s_pass], dtype=float)
+        init['flux'] = np.asarray(phot_result['flux_fit'][s_pass],
+                                  dtype=float)
+    if len(init) == 0:
+        return None, None
 
     grouper = SourceGrouper(
         min_separation=config['psf']['grouper_separation_in_psfsigma'] * psf_sigma)
@@ -959,9 +1055,6 @@ def _final_joint_refit(data_bksub, data_error, bkg_std,
     group_warn = int(config['psf'].get(
         'final_refit_group_warning_threshold', 10000))
 
-    # photutils v3 PSFPhotometry requires xy_bounds to be strictly positive
-    # (it does not accept 0 or None as "fixed"). Substitute a tiny positive
-    # value when the user has asked for pinned positions.
     # The ladder's fit_shape scales with PSF FWHM; the joint refit can
     # afford a wider window because positions are pinned and the LM only
     # has to solve for fluxes. Falls back to the FWHM-derived ladder
@@ -969,15 +1062,37 @@ def _final_joint_refit(data_bksub, data_error, bkg_std,
     refit_fit_shape = config['psf'].get(
         'final_refit_fit_shape',
         _resolve_fit_shape(psf_sigma))
+    # Pinned positions: with xy_bounds=1e-6 (the legacy emulation of
+    # "fixed"), photutils still treats every source as a 3-parameter
+    # nonlinear problem — the grouped LM computes finite-difference
+    # Jacobians over 3N parameters per group, which is what makes
+    # mega-groups in crowded fields pathologically slow, and it flags
+    # ~every source with bit 32 ("parameter at bound") as a side
+    # effect. Genuinely fixing x_0/y_0 on the model reduces each group
+    # to an N-parameter problem that is linear in flux (LM converges
+    # in ~2 iterations) and leaves flag 32 meaningful. Same optimum,
+    # much cheaper.
+    fix_positions = (xy_bound <= 0 and bool(
+        config['psf'].get('final_refit_fix_positions', True)))
+    if fix_positions:
+        psf_model_refit = psf_model.copy()
+        psf_model_refit.x_0.fixed = True
+        psf_model_refit.y_0.fixed = True
+        xy_bounds_arg = None
+    else:
+        # photutils v3 PSFPhotometry requires xy_bounds to be strictly
+        # positive; substitute a tiny value to emulate pinning.
+        psf_model_refit = psf_model
+        xy_bounds_arg = max(xy_bound, 1e-6)
     psfphot = PSFPhotometry(
-        psf_model,
+        psf_model_refit,
         fit_shape       = refit_fit_shape,
         finder          = None,
         grouper         = grouper,
         local_bkg_estimator = localbkg,
         aperture_radius = config['psf']['PSFPhotometry_aperture_radius'],
         fitter_maxiters = config['psf']['PSFPhotometry_fitter_maxiters'],
-        xy_bounds       = max(xy_bound, 1e-6),
+        xy_bounds       = xy_bounds_arg,
         group_warning_threshold = group_warn,
     )
 
@@ -991,17 +1106,119 @@ def _final_joint_refit(data_bksub, data_error, bkg_std,
     catastrophic_factor = float(config['psf'].get(
         'final_refit_catastrophic_flux_factor', 20.0))
 
+    # Group-level memoisation across refit iterations. The grouper splits
+    # the field into independent LM subproblems; a group's fit depends only
+    # on its own member rows plus the (constant) image, error and mask. So
+    # a group whose member set is unchanged since the last iteration
+    # re-derives exactly the rows it produced before, and can be spliced in
+    # from the cache instead of re-fit. Iterations after the first usually
+    # only add a handful of leftover sources, touching a few groups —
+    # everything else is reused. This is exact, not an approximation.
+    reuse_groups = bool(config['psf'].get(
+        'final_refit_reuse_unchanged_groups', True))
+    group_cache = {}
+    prev_sig_set = [None]
+    support_shape = _psf_support_shape(psf_model)
+    n_fit_total = 0
+
+    def _grouped_fit(init_tbl):
+        ''' Returns (phot, resid, status, n_fitted). status is 'ok',
+        'nochange' (every group cached -> this iteration reproduces the
+        previous one) or 'fail'.
+        '''
+        x = np.asarray(init_tbl['x'], dtype=float)
+        y = np.asarray(init_tbl['y'], dtype=float)
+        f = np.asarray(init_tbl['flux'], dtype=float)
+        if len(x) == 0:
+            return None, None, 'fail', 0
+        gids = (np.asarray(grouper(x, y)) if len(x) > 1
+                else np.ones(1, dtype=int))
+        uniq = np.unique(gids)
+        sig = {}
+        for g in uniq:
+            m = gids == g
+            sig[int(g)] = tuple(sorted(zip(x[m].tolist(), y[m].tolist(),
+                                           f[m].tolist())))
+        # "Nothing to do" means the SOURCE SET is unchanged since the last
+        # iteration, not merely that every group is already cached: a
+        # source dropped by the catastrophic-flux filter can leave every
+        # surviving group's signature intact (it was a singleton group),
+        # and the output table must still be rebuilt without it.
+        sig_set = frozenset(sig.values())
+        if sig_set == prev_sig_set[0]:
+            return None, None, 'nochange', 0
+        prev_sig_set[0] = sig_set
+
+        stale = [int(g) for g in uniq if sig[int(g)] not in group_cache]
+        n_fit = 0
+        if stale:
+            sel = np.isin(gids, stale)
+            n_fit = int(sel.sum())
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                phot_fit = psfphot(data_bksub, error=data_error,
+                                   init_params=init_tbl[sel],
+                                   mask=center_mask)
+            if phot_fit is None or len(phot_fit) == 0:
+                return None, None, 'fail', n_fit
+
+            fx = np.asarray(phot_fit['x_init'], dtype=float)
+            fy = np.asarray(phot_fit['y_init'], dtype=float)
+            for g in stale:
+                m = gids == g
+                rows = np.zeros(len(phot_fit), dtype=bool)
+                for xi, yi in zip(x[m], y[m]):
+                    rows |= (fx == xi) & (fy == yi)
+                group_cache[sig[g]] = phot_fit[rows]
+
+        parts = [group_cache[sig[int(g)]] for g in uniq]
+        parts = [p for p in parts if p is not None and len(p) > 0]
+        if not parts:
+            return None, None, 'fail', int(sel.sum())
+        combined = parts[0] if len(parts) == 1 else vstack(parts)
+
+        # restore the caller's source ordering (photutils returns rows in
+        # init order for a full fit; per-group splices must match so the
+        # output table is identical, not merely equivalent).
+        pos_index = {}
+        for i, (xi, yi) in enumerate(zip(x, y)):
+            pos_index.setdefault((xi, yi), []).append(i)
+        order_key = []
+        for xi, yi in zip(np.asarray(combined['x_init'], dtype=float),
+                          np.asarray(combined['y_init'], dtype=float)):
+            lst = pos_index.get((xi, yi))
+            order_key.append(lst.pop(0) if lst else len(x))
+        combined = combined[np.argsort(np.asarray(order_key, dtype=int),
+                                        kind='stable')]
+        model_img = _render_phot_model(psf_model, combined,
+                                        data_bksub.shape, support_shape)
+        return combined, data_bksub - model_img, 'ok', n_fit
+
     if progress is not None:
         task = progress.add_task(
             f'final joint refit ({len(init)} sources)', total=n_iter)
 
     for it in range(n_iter):
         try:
-            with warnings.catch_warnings():
-                warnings.simplefilter('ignore')
-                new_phot = psfphot(data_bksub, error=data_error,
-                                   init_params=init, mask=center_mask)
-            new_resid = psfphot.make_residual_image(data_bksub)
+            if reuse_groups:
+                cand_phot, cand_resid, status, n_fit = _grouped_fit(init)
+                n_fit_total += n_fit
+                if status == 'nochange':
+                    logger.debug(f'joint refit iter {it}: all groups '
+                                 f'unchanged; stopping.')
+                    break
+                if status == 'fail':
+                    raise RuntimeError('grouped refit returned no photometry')
+                new_phot, new_resid = cand_phot, cand_resid
+                logger.debug(f'joint refit iter {it}: fit {n_fit}/'
+                             f'{len(init)} sources ('
+                             f'{len(init) - n_fit} reused from cache)')
+            else:
+                with warnings.catch_warnings():
+                    warnings.simplefilter('ignore')
+                    new_phot = psfphot(data_bksub, error=data_error,
+                                       init_params=init, mask=center_mask)
+                new_resid = psfphot.make_residual_image(data_bksub)
         except Exception as e:
             logger.warning(f'joint refit iter {it} failed: {e}')
             break
@@ -1035,6 +1252,10 @@ def _final_joint_refit(data_bksub, data_error, bkg_std,
             resid_mad = float(bkgrms_estimator(new_resid))
         except Exception:
             resid_mad = bkg_std
+        logger.debug(f'joint refit iter {it}: N_init={len(init)} '
+                     f'N_out={len(new_phot)} resid_MAD={resid_mad:.10g} '
+                     f'n_nonfinite_flux='
+                     f'{int((~np.isfinite(np.asarray(new_phot["flux_fit"], dtype=float))).sum())}')
 
         if progress is not None:
             progress.update(task, description=(
