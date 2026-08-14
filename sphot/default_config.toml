@@ -30,11 +30,13 @@ freeze_patience = 2                    # consecutive stable iterations required 
 
 kernel_fit_objective = 'multi_source'      # 'multi_source' (NNLS lstsq) | 'single_source' (legacy LM)
 kernel_fit_stamp_half_min = 8              # min stamp half (px)
-kernel_fit_stamp_half_in_sigmaeff = 3.0    # adaptive: half = factor × √(psf_sigma² + σ_kernel²)
+kernel_fit_stamp_half_in_sigma_library = 4.0 # stamp half = factor × the LIBRARY PSF sigma. Deliberately NOT sized from the calibrated/previous kernel width: that closed a feedback loop (wider estimate -> bigger stamp -> wider estimate) with no fixed point, which is what made wide filters (F160W/F277W) run wide and scatter galaxy-to-galaxy.
+kernel_fit_bkg_order = 2                   # per-stamp background basis: 0=constant, 1=linear plane, 2=quadratic. A constant cannot represent the real smooth flux inside a stamp (galaxy disc, sky gradient, neighbour wings), so the fit absorbs it by broadening the PSF; 2 makes the recovered width stamp-size-independent.
 kernel_fit_max_neighbors = 15              # max neighbour columns per stamp
 kernel_fit_neighbor_pad_pix = 4.0          # neighbour search radius beyond stamp (px)
 center_mask_r_in_galaxy_size = 1.5         # calibration centre mask radius (× cd.galaxy_size, the robust initial Gaussian σ-guess; NOT the Sersic r_eff, which can run away on small/crowded cutouts and saturate the cap); capped at 0.45×min(residual.shape); 0 disables
 calib_xy_bounds = 3.0                       # calibration re-runs a dedicated anchor photometry with this position bound (px) so the kernel fit gets free-centroid, flag-32-free anchors; science psf_table (xy_bounds≈0) is untouched. Unset/None disables (reuse cd.psf_table).
+calib_th = 5.0                              # threshold (× bkg_std) for the calibration anchor re-photometry. Decoupled from [psf].th_min so lowering the science detection floor (e.g. th_min=2 for deeper iPSF) doesn't flood the calibrator with noise spikes that fail quality cuts and starve it of anchors (small-FWHM filters like F277W are most sensitive — at th≤3 DAO finds noise spikes that all fail the per-source PSF-fit quality cuts, leaving 0 anchors → bootstrap σ saturates at the upper bound).
 
 # fwhm scan inner photometry: 'lm' (default photutils PSFPhotometry) or 'nnls'
 # (forced photometry at DAO positions, no SourceGrouper, no LM iters).
@@ -54,7 +56,7 @@ scan_top_k = 100
 fwhm_method = 'empirical'
 
 [psf]
-th_min = 5
+th_min = 2
 th_max = 30
 th_iter = 10                           # threshold ladder steps
 th_max_consec_empty = 3                # early-stop ladder after N empty passes
