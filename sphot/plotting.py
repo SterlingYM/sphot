@@ -9,7 +9,7 @@ import logging
 from scipy import stats
 
 import astropy.units as u
-from astropy.stats import sigma_clip
+from astropy.stats import sigma_clip, sigma_clipped_stats
 from astropy.nddata import Cutout2D
 from astropy.modeling import models
 
@@ -187,17 +187,44 @@ def plot_profile2d(data,ax=None,fig=None,lower_limit_percentile=20,
         ax_side.invert_xaxis()
     return norm,offset
         
+def _panel_dc_level(img):
+    """Robust DC (background) level of a panel image."""
+    v = np.asarray(img, dtype=float)
+    v = v[np.isfinite(v)]
+    if v.size == 0:
+        return 0.0
+    _, med, _ = sigma_clipped_stats(v, sigma=3.0)
+    return float(med)
+
+
 def plot_sphot_results(cutoutdata,right_attr='psf_sub_data',dpi=100,
-                       percentiles=[0.1,99.9],**kwargs):
+                       percentiles=[0.1,99.9],align_background=True,**kwargs):
     print('using percentiles',percentiles)
     sky_model = getattr(cutoutdata,'sky_model',None)
     if sky_model is None:
         sky_model = cutoutdata._bkg_level
     rawdata_bksub = cutoutdata._rawdata - sky_model.mean() # cutoutdata._bkg_level
     bestfit_sersic_img = cutoutdata.sersic_modelimg
-    sersic_residual = cutoutdata.sersic_residual #- sky_model.mean() 
+    sersic_residual = cutoutdata.sersic_residual #- sky_model.mean()
     psf_model_total = cutoutdata.psf_modelimg
     psf_subtracted_data_bksub = getattr(cutoutdata,right_attr)
+
+    # All panels share ONE LogNorm + offset (computed from panel A), but the
+    # images do not share a background level: sersic_residual is built from
+    # _rawdata and still carries the sky, the model images sit near zero, and
+    # psf_sub_data has been sky-subtracted. Without this the same physical
+    # "background" lands on a different colour in every panel, and any DC
+    # error elsewhere in the pipeline silently re-scales the whole figure.
+    # Put every panel on a common zero so the colour map means the same
+    # thing everywhere.
+    if align_background:
+        rawdata_bksub = rawdata_bksub - _panel_dc_level(rawdata_bksub)
+        bestfit_sersic_img = (bestfit_sersic_img
+                              - _panel_dc_level(bestfit_sersic_img))
+        sersic_residual = sersic_residual - _panel_dc_level(sersic_residual)
+        psf_model_total = psf_model_total - _panel_dc_level(psf_model_total)
+        psf_subtracted_data_bksub = (psf_subtracted_data_bksub
+                                     - _panel_dc_level(psf_subtracted_data_bksub))
                   
     fig = plt.figure(figsize=(10,10),dpi=dpi)
     ax0 = fig.add_axes([-0.45,0.55,0.55,0.55])
