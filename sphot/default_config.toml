@@ -68,8 +68,8 @@ bkg_floor_factor = 0.3                 # floor on re-estimated bkg_std (fraction
 sparse_nnls = true                     # build the NNLS design matrix sparsely: each column is a render_shape stamp (~1% nonzero), so the Gram A.T@A costs ~1e4x fewer ops and ~100x less memory than the dense form. Same values.
 fast_psf_interpolator = true           # evaluate ImagePSF via scipy.ndimage.map_coordinates instead of RectBivariateSpline: same cubic spline to ~1e-16, 3-7x faster per evaluation
 ladder_dedup_psfsigma = 0.5            # in-ladder duplicate cut (× psf_sigma); 0 disables
-ladder_warm_start = false              # after the first iPSF call, seed the joint refit with the previous catalogue and skip the detection ladder (the refit's leftover loop finds new sources). OFF by default: faster on sparse fields, SLOWER on crowded ones
-ladder_full_every = 3                  # force a full ladder every Nth iPSF call to re-anchor the catalogue (0 = never after the first)
+ladder_warm_start = 'nnls'             # intermediate-iteration iPSF shortcut. 'nnls' = freeze positions from the last full pass and update ALL fluxes with one sparse NNLS solve (~0.5s vs 60-100s; full passes still run on the first call, every ladder_full_every-th call, and the flagged final pass). false = full ladder every iteration; true = legacy seed-the-LM-refit variant (slower on crowded fields).
+ladder_full_every = 5                  # force a full ladder every Nth iPSF call to re-anchor the catalogue (0 = never after the first, which corrupts the catalogue -- do not). 8 is the tested aggressive end (quality held); 5 keeps one extra re-anchor of margin for ~30s.
 
 final_refit_method = 'iterative'       # 'iterative' | 'nnls' | 'none'
 

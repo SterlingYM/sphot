@@ -139,6 +139,79 @@ class PSFFitter():
             psfimg, psf_oversample, fill_value=0.0, x_0=0, y_0=0)
         return psf_model
 
+    def _nnls_warm_pass(self, data, center_mask_params):
+        ''' Flux-only iPSF update between main-loop iterations.
+
+        Sources do not move between iterations -- only the Sersic model
+        (and hence `sersic_residual`, the iPSF input) changes -- so the
+        intermediate iPSF calls only exist to produce `psf_sub_data` for
+        the next Sersic fit. Skip detection entirely: freeze the positions
+        from the last full pass and re-solve ALL fluxes against the new
+        image with one global sparse NNLS (~0.5 s vs 60-100 s for a full
+        ladder + LM refit). Non-negative by construction; model/residual
+        consistent by construction. Full passes still run on the first
+        call, every `ladder_full_every`-th call, and the flagged final
+        pass, so newly-exposed sources are picked up there.
+
+        Returns (psf_table, resid) or None to fall through to the full
+        photometry path.
+        '''
+        from scipy.optimize import nnls as _scipy_nnls
+        prev = getattr(self.cutoutdata, 'psf_table', None)
+        try:
+            names = (prev.dtype.names
+                     if hasattr(prev, 'dtype') and prev.dtype.names
+                     else prev.colnames)
+            if not all(c in names for c in ('x_fit', 'y_fit', 'flux_fit')):
+                return None
+            x = np.asarray(prev['x_fit'], dtype=float)
+            y = np.asarray(prev['y_fit'], dtype=float)
+            ok = np.isfinite(x) & np.isfinite(y)
+            if ok.sum() < 3:
+                return None
+            prev = prev[ok]
+            x, y = x[ok], y[ok]
+
+            data = np.asarray(data, dtype=float)
+            H, W = data.shape
+            mask = _build_center_mask((H, W), center_mask_params)
+            b = data.ravel().astype(np.float32)
+            invalid = ~np.isfinite(b)
+            if mask is not None:
+                invalid |= mask.ravel()
+            b = np.where(invalid, 0.0, b)
+            A = _build_design_matrix(self.psf_model, x, y, (H, W),
+                                     _psf_support_shape(self.psf_model),
+                                     invalid_flat=invalid)
+            G = _design_gram(A)
+            rhs = _design_rmatvec(A, b)
+            L = np.linalg.cholesky(G + 1e-6 * np.eye(G.shape[0]))
+            f, _ = _scipy_nnls(L.T, np.linalg.solve(L, rhs), maxiter=10000)
+            model = _design_matvec(A, f.astype(np.float32)).reshape(H, W)
+
+            nun = int((~invalid).sum())
+            rr = b - model.ravel()
+            sig = (float(np.sqrt(np.sum(rr[~invalid] ** 2)
+                                 / max(nun - len(x), 1)))
+                   if nun > len(x) + 1 else 1.0)
+            try:
+                gdiag = np.diag(np.linalg.pinv(G + 1e-6 * np.eye(G.shape[0])))
+                ferr = np.sqrt(np.maximum(gdiag, 0.0)) * sig
+            except Exception:
+                ferr = np.full(len(x), sig)
+
+            phot = prev.copy()
+            phot['flux_fit'] = f.astype(float)
+            phot['flux_err'] = ferr
+            zero = f <= 0
+            if zero.any():
+                phot = phot[~zero]
+            return phot, data - model
+        except Exception as e:
+            logger.warning(f'warm NNLS pass failed ({e}); '
+                           f'falling back to full photometry')
+            return None
+
     def fit(self,fit_to='sersic_residual',**kwargs):
         ''' Perform PSF fitting via iterative_psf_fitting (wraps
         do_psf_photometry with a threshold ladder so we don't fit >1000
@@ -193,7 +266,25 @@ class PSFFitter():
         # any drift is re-anchored (0 = warm start forever after the first).
         init_sources = None
         n_call = int(getattr(self.cutoutdata, '_ipsf_call_count', 0))
-        if bool(config['psf'].get('ladder_warm_start', False)):
+        warm_mode = config['psf'].get('ladder_warm_start', False)
+        # The caller flags the final photometry pass (nnls_now=True); that
+        # pass must always be a FULL ladder + refit so the saved products
+        # come from the complete pipeline.
+        force_full = bool(kwargs.get('nnls_now', False))
+        if warm_mode == 'nnls' and not force_full:
+            prev = getattr(self.cutoutdata, 'psf_table', None)
+            full_every = int(config['psf'].get('ladder_full_every', 3))
+            due_full = (n_call == 0 or
+                        (full_every > 0 and n_call % full_every == 0))
+            if prev is not None and len(prev) > 0 and not due_full:
+                out = self._nnls_warm_pass(self.data, center_mask_params)
+                if out is not None:
+                    self.cutoutdata._ipsf_call_count = n_call + 1
+                    psf_table, resid = out
+                    logger.info(f'iPSF warm NNLS pass: {len(psf_table)} '
+                                f'sources, flux-only update (ladder skipped)')
+                    return self._finalize_fit(psf_table, resid)
+        if warm_mode is True and not force_full:
             prev = getattr(self.cutoutdata, 'psf_table', None)
             full_every = int(config['psf'].get('ladder_full_every', 3))
             due_full = (n_call == 0 or
@@ -228,6 +319,12 @@ class PSFFitter():
             self.cutoutdata.psf_table = None
             return self.cutoutdata
 
+        return self._finalize_fit(psf_table, resid)
+
+    def _finalize_fit(self, psf_table, resid):
+        ''' Common tail for both the full-photometry and warm-NNLS paths:
+        build psf_model_total / psf_sub_data / residual images and store
+        everything on the cutoutdata. '''
         # Exclude catastrophic-chi² fits from psf_model_total (psf_table
         # itself is preserved — only the subtracted image is corrected).
         resid = _rebuild_resid_excluding_catastrophic_chi2(
