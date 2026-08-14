@@ -83,6 +83,7 @@ final_refit_detect_th = 4.0            # leftover detect threshold (× residual 
 final_refit_dedup_psfsigma = 2.0
 final_refit_residual_tol = 0.01        # stop when residual MAD stops improving
 final_refit_catastrophic_flux_factor = 20.0
+final_refit_nnls_fluxes = 'final'        # after the LM joint refit converges, re-solve ALL fluxes with one global sparse NNLS. 'final' = only on the LAST photometry pass (whose products are saved); 'always' = every refit call (~2x slower on crowded fields); 'never' disables. Non-negativity lives in the SOLVER, so negative fluxes and +/- compensating pairs are impossible by construction and the model/residual pair is consistent. Zeroed sources are dropped; one leftover round re-fits real stars that were hiding under them. (Row-dropping approaches all failed: removing negative rows and re-fitting with unconstrained LM just mints new negatives.)
 final_refit_fit_shape = [11, 11]       # joint-refit fit window (px)
 
 # 'nnls' refit + post-NNLS find_peaks leftover loop
@@ -93,6 +94,7 @@ leftover_box_size = 3
 
 mask_aper_size_in_r_eff = 3.5          # sky-mask aperture size (× r_eff)
 raise_error = false
+psf_model_rebase = 'none'              # how to re-zero the reconstructed PSF-model image (data - resid). 'min' was the legacy behaviour and rebases the WHOLE frame on a single negative pixel (measured: a -1.05 min put a +1.05 pedestal over 75% of N5468/g000 F150W, sky 0.34), which forces a negative sky fit and inflates the Sersic r_eff. 'none' leaves it alone.
 residual_clip_sigma = 15.0             # high to avoid over-masking
 
 finder_kwargs = {roundness_range=[-1.0, 1.0], sharpness_range=[0.20, 1.0]}

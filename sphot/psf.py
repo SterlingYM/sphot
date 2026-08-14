@@ -228,8 +228,12 @@ class PSFFitter():
             self.cutoutdata.psf_table = None
             return self.cutoutdata
 
-        psf_model_total = self.data - resid
-        psf_model_total -= np.nanmin(psf_model_total) # PSFs are forced to be positive, so minimum is always zero
+        # Exclude catastrophic-chi² fits from psf_model_total (psf_table
+        # itself is preserved — only the subtracted image is corrected).
+        resid = _rebuild_resid_excluding_catastrophic_chi2(
+            psf_table, resid, self.psf_model)
+
+        psf_model_total = _rebase_psf_model(self.data - resid)
         # TODO: handle the case where all pixels are filled with PSF
 
         # generate PSF-subtracted data
@@ -257,6 +261,105 @@ class PSFFitter():
         self.cutoutdata.psf_sub_data_error = psf_subtracted_data_error
         self.cutoutdata.psf_table = psf_table
         return self.cutoutdata
+
+def _rebase_psf_model(psf_model_total):
+    ''' Optionally re-zero the reconstructed PSF-model image.
+
+    `psf_model_total` is `data - resid`, i.e. a DIFFERENCE OF IMAGES -- not a
+    rendered sum of PSFs. It therefore can and does go negative (a negative
+    LM flux, or a source added back into `resid` by
+    `_rebuild_resid_excluding_catastrophic_chi2`). The legacy behaviour
+    subtracted its global minimum, on the assumption that "PSFs are positive
+    so the minimum is zero". When that assumption fails, ONE negative pixel
+    rebases the entire frame: measured on N5468/g000 F150W, a -1.05 minimum
+    put a flat +1.05 pedestal across 75% of the image (sky there is 0.34).
+    That pedestal propagates into `psf_sub_data`, forces `remove_sky` to fit
+    a NEGATIVE sky to compensate, and leaves a residual floor that the
+    positive-only Sersic can only absorb by inflating r_eff.
+
+    Modes (`[psf].psf_model_rebase`):
+      'none' -- leave the reconstruction alone (default)
+      'min'  -- legacy: subtract the global minimum (for reproducing old runs)
+    '''
+    mode = str(config['psf'].get('psf_model_rebase', 'none')).lower()
+    if mode == 'min':
+        return psf_model_total - np.nanmin(psf_model_total)
+    lo = float(np.nanmin(psf_model_total))
+    if lo < 0:
+        logger.debug(f'psf_model_total has min={lo:.4g}; left as-is '
+                     f'(psf_model_rebase={mode!r})')
+    return psf_model_total
+
+
+def _rebuild_resid_excluding_catastrophic_chi2(
+        psf_table, resid, psf_model,
+        chi2_factor=5.0, min_sources=5):
+    """Return a new `resid` image with catastrophic-chi² sources'
+    PSF-model contributions added back in, so that
+    `psf_model_total = data − resid` excludes them. **`psf_table` is
+    not modified** — downstream code (mainloop Sersic refit, sky fit,
+    calibrator) still sees the full source list as iPSF reported it.
+
+    Motivation: in crowded fields, the leftover-detection loop in
+    `_final_joint_refit` can pick up local maxima on noise / Sersic-
+    residual substructure that aren't real point sources. The pinned-
+    position joint refit then assigns those phantoms whatever flux
+    best matches at the wrong location — typically via PSF-wing
+    overlap with a real source a few pixels away. Their fitted
+    reduced_chi2 is wildly larger than well-behaved sources (e.g.
+    chi2 ~ 80–90 vs median ~3 in one observed case), and their
+    contribution to psf_model_total over-subtracts the data at the
+    wrong centre, leaving deep negative pixels in psf_sub_data.
+
+    The minimal-surface fix is to exclude only the phantoms from the
+    subtracted-image reconstruction. Removing them from `psf_table`
+    also propagates changes into Sersic / calibration state via
+    residual_masked and downstream remove_sky steps, which can bias
+    the calibrated kernel σ unintentionally.
+
+    `chi2_factor`: any row with reduced_chi2 > chi2_factor × median is
+    treated as catastrophic (capped at a minimum of 1.0 so a small
+    median doesn't over-prune).
+    `min_sources`: skip the filter if there are fewer than this many
+    rows — the median is unreliable on small N.
+    """
+    if psf_table is None or len(psf_table) < min_sources or resid is None:
+        return resid
+    if 'reduced_chi2' not in psf_table.colnames:
+        return resid
+    chi2 = np.asarray(psf_table['reduced_chi2'], dtype=float)
+    finite = np.isfinite(chi2)
+    if int(finite.sum()) < min_sources:
+        return resid
+    chi2_med = float(np.nanmedian(chi2[finite]))
+    cap = max(chi2_med * float(chi2_factor), 1.0)
+    bad = chi2 > cap
+    bad_idx = np.where(bad)[0]
+    if bad_idx.size == 0:
+        return resid
+    yy, xx = np.indices(resid.shape, dtype=float)
+    new_resid = resid.copy()
+    n_added = 0
+    for i in bad_idx:
+        f_i = float(psf_table['flux_fit'][i])
+        x_i = float(psf_table['x_fit'][i])
+        y_i = float(psf_table['y_fit'][i])
+        if not (np.isfinite(f_i) and np.isfinite(x_i) and np.isfinite(y_i)):
+            continue
+        try:
+            m_i = psf_model.evaluate(xx, yy, flux=f_i, x_0=x_i, y_0=y_i)
+        except Exception:
+            continue
+        m_i = np.where(np.isfinite(m_i), m_i, 0.0)
+        new_resid = new_resid + m_i
+        n_added += 1
+    logger.info(
+        f'PSF model: excluded {n_added} catastrophic-chi² source(s) '
+        f'(reduced_chi2 > {chi2_factor}× median {chi2_med:.2f}) '
+        f'from psf_model_total to avoid over-subtraction; '
+        f'psf_table retains them.')
+    return new_resid
+
 
 def filter_psfphot_results(phot_result,
                            center_mask_params=None,
@@ -413,19 +516,19 @@ def subtract_background(data):
     sigma = config['psf']['bkg_sigma_clip']
     box_size = config['psf']['bkg_box_size']
     filter_size = config['psf']['bkg_filter_size']
-    
+
     sigma_clip = SigmaClip(sigma=sigma)
     bkg = Background2D(data, box_size, filter_size=filter_size,
                     sigma_clip=sigma_clip, bkg_estimator=bkg_estimator)
     data_bksub = data - bkg.background
-    
+
     # the above is somehow often slightly offset from true zero.
     # this can be corrected by running MMMBackground
     data_bksub -= mmm_bkg(data_bksub)
-    
+
     bkg_std = bkgrms(data_bksub)
     data_error = np.ones_like(data_bksub) * bkg_std
-    
+
     return data_bksub,bkg_std,data_error
 
 def _resolve_fit_shape(psf_sigma):
@@ -970,8 +1073,12 @@ def run_forced_photometry_on_cutout(cutoutdata, x_init, y_init,
                        'leaving cutoutdata attrs unchanged.')
         return cutoutdata
 
-    psf_model_total = data - resid
-    psf_model_total -= np.nanmin(psf_model_total)
+    # Exclude catastrophic-chi² fits from psf_model_total (phot_table
+    # itself is preserved — only the subtracted image is corrected).
+    resid = _rebuild_resid_excluding_catastrophic_chi2(
+        phot_table, resid, psf_model)
+
+    psf_model_total = _rebase_psf_model(data - resid)
 
     mask, bkg_std = sigma_clip_outside_aperture(
         resid,
@@ -1064,6 +1171,17 @@ def _final_joint_refit(data_bksub, data_error, bkg_std,
     '''
     center_mask_params = kwargs.get('center_mask_params', None)
     center_mask = _build_center_mask(data_bksub.shape, center_mask_params)
+    # The mask handed to photutils must ALSO cover non-finite pixels.
+    # Without this, any source whose fit window touches a NaN region kills
+    # the ENTIRE grouped fit ("Objective function has encountered a
+    # non-finite value"), the refit silently returns (None, None), and the
+    # raw ladder result -- unrefit, negative fluxes included -- is what
+    # gets saved as psf_table. Measured: 13 of ~16 iPSF calls on
+    # N5468/g000 died this way.
+    nonfinite = ~np.isfinite(data_bksub)
+    if nonfinite.any():
+        center_mask = (nonfinite if center_mask is None
+                       else (center_mask | nonfinite))
     if init_override is not None:
         # Warm start: the seed catalogue already passed quality cuts when
         # it was built, so it is NOT re-filtered here — re-applying the
@@ -1374,6 +1492,127 @@ def _final_joint_refit(data_bksub, data_error, bkg_std,
 
     if new_phot is None or len(new_phot) == 0:
         return None, None
+
+    # ---- final non-negative flux solve ----
+    # Bad-source endgame. Row-dropping approaches all failed the same way:
+    # negative fluxes are a symptom of the UNCONSTRAINED flux solve (LM
+    # groups can trade +/- flux between near-degenerate columns), so
+    # removing the offending rows and re-fitting simply mints new ones
+    # (measured: gate v1 turned a -51 into a -123 and a +577/-huge pair).
+    # With positions fixed the flux problem is linear, so put the
+    # constraint IN the solver: one global sparse NNLS over the final
+    # source list. Negative fluxes become impossible, +/- compensating
+    # pairs cannot form, and the model/residual pair is consistent by
+    # construction (resid = data - A @ f from the same solve). Sources
+    # NNLS zeroes out are dropped (flux 0 contributes nothing, so no
+    # re-solve is needed); one DAO leftover round then gives any real
+    # star that was hiding under a zeroed source its own entry.
+    # 'always' = every refit call; 'final' = only when the caller flags the
+    # LAST photometry pass of the main loop (kwargs nnls_now=True) -- the
+    # pass whose psf_table/psf_sub_data get saved. Intermediate iPSF calls
+    # then keep the cheap LM fluxes (they only feed the Sersic and the
+    # calibrator), which avoids paying the NNLS + leftover cost ~11x per
+    # filter. true/false accepted for back-compat.
+    _mode = config['psf'].get('final_refit_nnls_fluxes', 'final')
+    if _mode is True:
+        _mode = 'always'
+    elif _mode is False:
+        _mode = 'never'
+    _run_nnls = (_mode == 'always'
+                 or (_mode == 'final' and bool(kwargs.get('nnls_now', False))))
+    if _run_nnls:
+        from scipy.optimize import nnls as _nnls
+
+        def _nnls_solve(phot):
+            x = np.asarray(phot['x_fit'], dtype=float)
+            y = np.asarray(phot['y_fit'], dtype=float)
+            b = data_bksub.ravel().astype(np.float32)
+            invalid = ~np.isfinite(b)
+            if center_mask is not None:
+                invalid |= center_mask.ravel()
+            b = np.where(invalid, 0.0, b)
+            A = _build_design_matrix(psf_model, x, y, data_bksub.shape,
+                                     _psf_support_shape(psf_model),
+                                     invalid_flat=invalid)
+            G = _design_gram(A)
+            rhs = _design_rmatvec(A, b)
+            L = np.linalg.cholesky(G + 1e-6 * np.eye(G.shape[0]))
+            f, _ = _nnls(L.T, np.linalg.solve(L, rhs), maxiter=10000)
+            model = _design_matvec(A, f.astype(np.float32))
+            resid = data_bksub - model.reshape(data_bksub.shape)
+            # flux errors from the Gram diagonal (same recipe as
+            # forced_psf_photometry)
+            rr = b - model
+            nun = int((~invalid).sum())
+            sig = (float(np.sqrt(np.sum(rr[~invalid] ** 2)
+                                 / max(nun - len(x), 1)))
+                   if nun > len(x) + 1 else float(bkg_std))
+            try:
+                gdiag = np.diag(np.linalg.pinv(G + 1e-6 * np.eye(G.shape[0])))
+                ferr = np.sqrt(np.maximum(gdiag, 0.0)) * sig
+            except Exception:
+                ferr = np.full(len(x), sig)
+            return f, ferr, resid
+
+        try:
+            for nnls_round in range(2):
+                flux, flux_err, resid_n = _nnls_solve(new_phot)
+                zero = flux <= 0
+                new_phot = new_phot.copy()
+                new_phot['flux_fit'] = flux
+                new_phot['flux_err'] = flux_err
+                if zero.any():
+                    logger.info(f'final NNLS fluxes: {int(zero.sum())}/'
+                                f'{len(flux)} source(s) zeroed and dropped')
+                    new_phot = new_phot[~zero]
+                new_resid = resid_n
+                if nnls_round == 1:
+                    break
+                # one leftover round on the NNLS residual
+                try:
+                    resid_mad = float(bkgrms_estimator(new_resid))
+                    finder = DAOStarFinder(threshold=detect_th * resid_mad,
+                                           fwhm=psf_sigma * 2.33,
+                                           **finder_kwargs)
+                    with warnings.catch_warnings():
+                        warnings.simplefilter('ignore')
+                        leftover = finder(new_resid, mask=center_mask)
+                except Exception:
+                    leftover = None
+                if leftover is None or len(leftover) == 0:
+                    break
+                lx = np.asarray(leftover['x_centroid'], dtype=float)
+                ly = np.asarray(leftover['y_centroid'], dtype=float)
+                ex = np.asarray(new_phot['x_fit'], dtype=float)
+                ey = np.asarray(new_phot['y_fit'], dtype=float)
+                d2 = ((lx[:, None] - ex[None, :]) ** 2
+                      + (ly[:, None] - ey[None, :]) ** 2)
+                is_new = d2.min(axis=1) > dedup_r2
+                keep_idx = []
+                for j in np.where(is_new)[0]:
+                    if all((lx[j] - lx[k]) ** 2 + (ly[j] - ly[k]) ** 2
+                           > dedup_r2 for k in keep_idx):
+                        keep_idx.append(int(j))
+                if not keep_idx:
+                    break
+                logger.info(f'final NNLS fluxes: adding {len(keep_idx)} '
+                            f'leftover source(s) and re-solving')
+                add = new_phot[:1].copy()
+                rows = []
+                for j in keep_idx:
+                    r = new_phot[:1].copy()
+                    r['x_fit'] = lx[j]; r['y_fit'] = ly[j]
+                    if 'x_init' in r.colnames:
+                        r['x_init'] = lx[j]; r['y_init'] = ly[j]
+                    r['flux_fit'] = float(leftover['flux'][j])
+                    if 'flags' in r.colnames:
+                        r['flags'] = 0
+                    rows.append(r)
+                new_phot = vstack([new_phot] + rows)
+        except Exception as e:
+            logger.warning(f'final NNLS flux solve failed: {e}; keeping '
+                           f'the LM fluxes')
+
     return new_phot, new_resid
 
 
