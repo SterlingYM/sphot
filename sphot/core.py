@@ -287,6 +287,10 @@ def run_basefit(galaxy,base_filter,
         setattr(cutoutdata,attrname,0) # remove previous results
     cutoutdata._calib_frozen = False
     cutoutdata._calib_stable_count = 0
+    # Warm-mode counter must also reset: it persists through h5 save/load,
+    # and a stale non-zero value would let the FIRST iPSF call of a rerun
+    # be a warm pass built on the loaded (pre-recalibration) catalogue.
+    cutoutdata._ipsf_call_count = 0
     cutoutdata.perform_bkg_stats()
     # Apply user-supplied blur when given; otherwise leave cd.psf as
     # the library and let the calibrator's bootstrap pick a blur from
@@ -445,6 +449,10 @@ def run_scalefit(galaxy,filtername,base_params,allow_refit,
         setattr(cutoutdata,attrname,0) # remove previous results
     cutoutdata._calib_frozen = False
     cutoutdata._calib_stable_count = 0
+    # Warm-mode counter must also reset: it persists through h5 save/load,
+    # and a stale non-zero value would let the FIRST iPSF call of a rerun
+    # be a warm pass built on the loaded (pre-recalibration) catalogue.
+    cutoutdata._ipsf_call_count = 0
 
     # 1. basic statistics
     cutoutdata.perform_bkg_stats()
@@ -623,6 +631,10 @@ def run_scalefit_forced(galaxy, filtername, base_filter, base_params,
         setattr(cutoutdata, attrname, 0)
     cutoutdata._calib_frozen = False
     cutoutdata._calib_stable_count = 0
+    # Warm-mode counter must also reset: it persists through h5 save/load,
+    # and a stale non-zero value would let the FIRST iPSF call of a rerun
+    # be a warm pass built on the loaded (pre-recalibration) catalogue.
+    cutoutdata._ipsf_call_count = 0
     cutoutdata.perform_bkg_stats()
     if blur_psf is not None:
         cutoutdata.blur_psf(blur_psf)

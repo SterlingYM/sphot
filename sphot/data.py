@@ -458,6 +458,9 @@ class MultiBandCutout():
         # previous-kernel image used by the skip-on-stable check.
         TRANSIENT_CUTOUT_ATTRS = {
             '_calibrate_psf_prev_kernel',
+            '_ipsf_call_count',
+            '_calib_frozen',
+            '_calib_stable_count',
         }
         with h5py.File(filepath,'w') as f:
             for g_key,g_val in self.__dict__.items():
@@ -619,6 +622,9 @@ def read_sphot_h5(filepath):
     TRANSIENT_CUTOUT_ATTRS = {
         '_calibrate_psf_kernel_iter',
         '_calibrate_psf_prev_kernel',
+        '_ipsf_call_count',
+        '_calib_frozen',
+        '_calib_stable_count',
     }
     galaxy_loaded = MultiBandCutout()
     with h5py.File(filepath,'r') as f:
