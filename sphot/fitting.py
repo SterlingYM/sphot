@@ -7,6 +7,58 @@ from scipy.ndimage import zoom
 from .config import config
 
 from petrofit import PSFConvolvedModel2D, model_to_image
+
+
+def _install_cached_convolve():
+    """Replace petrofit's module-level `convolve` (scipy.signal.convolve)
+    with a wrapper that caches the PSF kernel's FFT.
+
+    The Sersic model image is convolved with the SAME kernel on every
+    objective evaluation (~1e4 per base fit); scipy recomputes the
+    kernel's transform (and re-runs method selection) each call. Cache
+    the padded kernel FFT keyed by (kernel id, image shape) and do the
+    image-side transform only. Falls back to scipy for anything but the
+    2D real mode='same' case petrofit uses, and reproduces scipy's
+    'same' cropping convention exactly (verified for odd and even
+    kernels).
+    """
+    import petrofit.modeling.models as _pmm
+    import scipy.signal as _ss
+    import scipy.fft as _sfft
+    if getattr(_pmm.convolve, '_sphot_cached', False):
+        return
+    _orig = _pmm.convolve
+    _cache = {}
+
+    def _cached_convolve(in1, in2, mode='full', method='auto'):
+        if (mode != 'same' or np.iscomplexobj(in1) or np.iscomplexobj(in2)
+                or np.ndim(in1) != 2 or np.ndim(in2) != 2):
+            return _orig(in1, in2, mode=mode, method=method)
+        img = np.asarray(in1, dtype=float)
+        ker = np.asarray(in2, dtype=float)
+        H, W = img.shape
+        kh, kw = ker.shape
+        fh, fw = H + kh - 1, W + kw - 1
+        sh = _sfft.next_fast_len(fh)
+        sw = _sfft.next_fast_len(fw)
+        key = (id(in2), ker.shape, sh, sw)
+        kfft = _cache.get(key)
+        if kfft is None:
+            if len(_cache) > 8:
+                _cache.clear()
+            kfft = _sfft.rfft2(ker, s=(sh, sw))
+            _cache[key] = kfft
+        full = _sfft.irfft2(_sfft.rfft2(img, s=(sh, sw)) * kfft,
+                            s=(sh, sw))[:fh, :fw]
+        y0 = (kh - 1) // 2
+        x0 = (kw - 1) // 2
+        return full[y0:y0 + H, x0:x0 + W]
+
+    _cached_convolve._sphot_cached = True
+    _pmm.convolve = _cached_convolve
+
+
+_install_cached_convolve()
         
 def _crop_psf_for_sersic(psf):
     ''' Trim the PSF used for the SERSIC convolution to the smallest

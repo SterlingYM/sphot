@@ -223,6 +223,14 @@ def parallel_scalefit(galaxy, base_params, filters: Sequence[str],
     _prev_quiet = os.environ.get('SPHOT_QUIET_IMPORT')
     os.environ['SPHOT_QUIET_IMPORT'] = '1'
 
+    # Pin BLAS to one thread in the ENVIRONMENT before any child spawns:
+    # spawn-mode children inherit the environment at spawn time and load
+    # numpy fresh, so this is sufficient (and necessary) to keep the
+    # per-filter workers single-threaded while the parent's serial phase
+    # ran multi-threaded BLAS. n_workers x 1 thread == the allocation.
+    for _v in ("OMP_NUM_THREADS", "MKL_NUM_THREADS",
+               "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+        os.environ[_v] = "1"
     ctx = mp.get_context('spawn')
     # `ctx.Queue()` instead of `ctx.Manager().Queue()`: avoids spawning
     # a separate SyncManager subprocess (which has been flaky on macOS

@@ -52,10 +52,18 @@ def main():
     
 if __name__ == '__main__':
 
-    os.environ.setdefault("OMP_NUM_THREADS", "1")
-    os.environ.setdefault("MKL_NUM_THREADS", "1")
-    os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
-    os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+    # BLAS threading: the SERIAL base-fit phase benefits from threaded
+    # linear algebra (Gram products, Cholesky, lstsq), so let BLAS use the
+    # slurm allocation when one is declared; sphot.parallel pins these to
+    # "1" in the environment right before spawning the per-filter worker
+    # pool, so scale-fit workers stay single-threaded and never
+    # oversubscribe. Without a slurm allocation the old conservative
+    # single-thread default is kept.
+    _n_blas = os.environ.get("SLURM_CPUS_PER_TASK", "1")
+    os.environ.setdefault("OMP_NUM_THREADS", _n_blas)
+    os.environ.setdefault("MKL_NUM_THREADS", _n_blas)
+    os.environ.setdefault("OPENBLAS_NUM_THREADS", _n_blas)
+    os.environ.setdefault("NUMEXPR_NUM_THREADS", _n_blas)
 
     main()
     

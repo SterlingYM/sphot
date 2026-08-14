@@ -1180,8 +1180,19 @@ def calibrate_psf_step(
     # is scoped to calibration only: cd.psf_table / psf_sub_data (the
     # science products) are never written here, and the main iPSF fit is
     # untouched.
+    # calib_xy_bounds <= 0 (or absent) reuses the science cd.psf_table
+    # instead of running a dedicated anchor re-photometry.
+    # DO NOT ENABLE without beating the 2026-08-14 retest: reuse was tried
+    # after final_refit_fix_positions removed the flag-32 spam and
+    # kernel_fit_bkg_order=2 fixed the width objective, on the theory that
+    # the dedicated photometry's premises were gone -- and the width fit
+    # STILL collapsed (F277W scatter 0.29 -> 1.41 across hosts with the
+    # sigma=5.0 bound saturation returning; F160W 0.24 -> 0.84 with one
+    # host at 0.10). Pinned anchor POSITIONS are themselves a sufficient
+    # cause of the instability, independent of flags and objective. The
+    # free-centroid re-photometry stays.
     calib_xy_bounds = config.get('psf-calib', {}).get('calib_xy_bounds', None)
-    if calib_xy_bounds is not None:
+    if calib_xy_bounds is not None and float(calib_xy_bounds) > 0:
         from .psf import iterative_psf_fitting
         from photutils.psf import ImagePSF
         from .psf import make_image_psf
