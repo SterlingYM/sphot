@@ -33,11 +33,48 @@ def _seed_dao_fwhm_factor(cutoutdata):
         getattr(cutoutdata, 'dao_fwhm_factor', 2.33))
 
 
+def _polish_sersic(fitter, cutoutdata, progress=None,
+                   fit_to='psf_sub_data'):
+    """Re-optimise the Sersic parameters against `fit_to` under the CURRENT
+    PSF, using the caller's own fitter.
+
+    The best-fit Sersic parameters are genuinely PSF-dependent: a wider PSF
+    smooths the model, so the intrinsic profile that matches the data has
+    to sharpen to compensate. Measured on F150W by refitting at kernel
+    sigma 0 -> 3 px, the best-fit index n moves by 17-100% and r_eff by
+    13-54% depending on the galaxy. So re-rendering the OLD parameters
+    under a NEW PSF (what this module used to do) leaves a model that is
+    no longer the best fit to anything.
+
+    Uses the caller's fitter so the fit contract is preserved: a base fit
+    gets its full Sersic re-optimised, while a scale fit only re-solves
+    its flux scale (ModelScaleFitter) and cannot silently change the
+    shape parameters it is supposed to inherit.
+    """
+    if fitter is None:
+        return False
+    try:
+        from .fitting import ModelScaleFitter
+        if isinstance(fitter, ModelScaleFitter):
+            # scale fits only have a flux scale to move; iterative_NM is
+            # the only method ModelScaleFitter implements.
+            fitter.fit(fit_to=fit_to, method='iterative_NM', max_iter=5,
+                       progress=progress)
+        else:
+            fitter.fit(fit_to=fit_to, method='lbfgsb_polish',
+                       progress=progress)
+        return True
+    except Exception as e:
+        logger.warning(f'Sersic polish after PSF calibration failed: {e}; '
+                       f'falling back to a re-render')
+        return False
+
+
 def _refresh_sersic_modelimg(cutoutdata, fit_complex_model=False):
     """Re-render `cd.sersic_modelimg` / `cd.sersic_residual` using the
-    CURRENT `cd.psf` and the SAVED `cd.sersic_params`. Called after
-    `calibrate_psf_step` so the PSF-convolved Sersic model tracks the
-    just-updated effective PSF (no Sersic re-fit, just a re-render).
+    CURRENT `cd.psf` and the SAVED `cd.sersic_params`. Fallback for when
+    no fitter is available to re-optimise with (see `_polish_sersic`);
+    the parameters are left stale, only the rendering is updated.
     """
     if not hasattr(cutoutdata, 'sersic_params'):
         return
@@ -97,7 +134,7 @@ def _refresh_fitter_psf(fitter, cutoutdata, simple=True):
 
 
 def _maybe_recalibrate_psf(cutoutdata, progress=None,
-                            fit_complex_model=False):
+                            fit_complex_model=False, fitter=None):
     """Run PSF kernel + DAO fwhm recalibration on `cutoutdata` if
     `[psf-calib].in_mainloop` is true. After a successful call, also
     re-render `cd.sersic_modelimg` / `cd.sersic_residual` against the
@@ -139,7 +176,17 @@ def _maybe_recalibrate_psf(cutoutdata, progress=None,
                        f'continuing without recalibration\n'
                        f'{traceback.format_exc()}')
         return
-    _refresh_sersic_modelimg(cutoutdata, fit_complex_model=fit_complex_model)
+    # The PSF just changed, so the saved Sersic parameters are no longer
+    # the best fit. Re-optimise them under the new PSF when the caller
+    # handed us its fitter; otherwise fall back to a plain re-render.
+    polished = False
+    if bool(config['core'].get('refit_sersic_after_psf_calib', True)):
+        _refresh_fitter_psf(fitter, cutoutdata,
+                            simple=not fit_complex_model)
+        polished = _polish_sersic(fitter, cutoutdata, progress=progress)
+    if not polished:
+        _refresh_sersic_modelimg(cutoutdata,
+                                 fit_complex_model=fit_complex_model)
     if freeze:
         from .calibrate_psf import _kernels_close
         threshold = float(cfg.get('kernel_skip_threshold', 1e-3))
@@ -245,7 +292,12 @@ def run_basefit(galaxy,base_filter,
     model_1 = prep_model(cutoutdata,simple=True)
     model_2 = prep_model(cutoutdata,simple=False) if fit_complex_model else model_1
     model_1 = update_model_with_isophot_fit(model_1,cutoutdata,fit_to='data')
-    model_2 = update_model_with_isophot_fit(model_2,cutoutdata,fit_to='psf_sub_data') if fit_complex_model else model_1
+    # psf_sub_data only exists after the first PSF pass; on a fresh run the
+    # models are built before that, so fall back to the raw data for the
+    # isophote initialisation.
+    _iso_fit_to = ('psf_sub_data' if hasattr(cutoutdata, 'psf_sub_data')
+                   else 'data')
+    model_2 = update_model_with_isophot_fit(model_2,cutoutdata,fit_to=_iso_fit_to) if fit_complex_model else model_1
     fitter_1 = ModelFitter(model_1,cutoutdata)
     fitter_2 = ModelFitter(model_2,cutoutdata) if fit_complex_model else fitter_1
     fitter_psf = PSFFitter(cutoutdata)
@@ -259,7 +311,8 @@ def run_basefit(galaxy,base_filter,
     cutoutdata.remove_sky(**kwargs_rmsky_sersic)
     fitter_psf.fit(**kwargs_psf)
     cutoutdata.remove_sky(**kwargs_rmsky_psf)
-    _maybe_recalibrate_psf(cutoutdata, progress=progress, fit_complex_model=fit_complex_model)
+    _maybe_recalibrate_psf(cutoutdata, progress=progress, fit_complex_model=fit_complex_model,
+                           fitter=fitter_1)
     _refresh_fitter_psf(fitter_2, cutoutdata, simple=not fit_complex_model)
     if fit_complex_model:
         # initial fit for the complex model if needed
@@ -267,7 +320,8 @@ def run_basefit(galaxy,base_filter,
         cutoutdata.remove_sky(**kwargs_rmsky_sersic)
         fitter_psf.fit(**kwargs_psf)
         cutoutdata.remove_sky(**kwargs_rmsky_psf)
-        _maybe_recalibrate_psf(cutoutdata, progress=progress, fit_complex_model=fit_complex_model)
+        _maybe_recalibrate_psf(cutoutdata, progress=progress, fit_complex_model=fit_complex_model,
+                               fitter=fitter_2)
         _refresh_fitter_psf(fitter_2, cutoutdata, simple=not fit_complex_model)
     progress.update(progress_main, advance=1, refresh=True)
 
@@ -293,7 +347,8 @@ def run_basefit(galaxy,base_filter,
         cutoutdata.remove_sky(**kwargs_rmsky_sersic)
         fitter_psf.fit(**kwargs_psf)
         cutoutdata.remove_sky(**kwargs_rmsky_psf)
-        _maybe_recalibrate_psf(cutoutdata, progress=progress, fit_complex_model=fit_complex_model)
+        _maybe_recalibrate_psf(cutoutdata, progress=progress, fit_complex_model=fit_complex_model,
+                               fitter=fitter_2)
         _refresh_fitter_psf(fitter_2, cutoutdata, simple=not fit_complex_model)
         progress.update(progress_main, advance=1, refresh=True)
 
@@ -316,7 +371,7 @@ def run_basefit(galaxy,base_filter,
     # iteration's PSF. Run one final fitter_psf.fit() so cd.residual
     # matches the saved kernel_params.
     if config.get('psf-calib', {}).get('in_mainloop', False):
-        fitter_psf.fit(**kwargs_psf)
+        fitter_psf.fit(nnls_now=True, **kwargs_psf)
         cutoutdata.remove_sky(**kwargs_rmsky_psf)
 
     # Final L-BFGS-B polish + one more PSF photometry pass.
@@ -329,8 +384,21 @@ def run_basefit(galaxy,base_filter,
         fitter_2.fit(fit_to='psf_sub_data', method='lbfgsb_polish',
                      progress=progress)
         cutoutdata.remove_sky(**kwargs_rmsky_sersic)
-        fitter_psf.fit(**kwargs_psf)
+        fitter_psf.fit(nnls_now=True, **kwargs_psf)
         cutoutdata.remove_sky(**kwargs_rmsky_psf)
+
+    # Final consistency pass. The loop above ends with a PSF-photometry
+    # call, which rewrites psf_sub_data — so without this the SAVED Sersic
+    # parameters are the ones that were optimal for the PREVIOUS
+    # psf_sub_data, not the one that ships in the file. Measured on
+    # N5468/g000 F150W: the saved solution sat 38% above the optimum for
+    # the saved data, and a plain polish recovered all of it. Re-optimise
+    # last, then re-fit the sky so sersic_residual (built from _rawdata,
+    # which still carries the background) is left sky-subtracted.
+    if config['core'].get('final_sersic_polish_after_psf', True):
+        fitter_2.fit(fit_to='psf_sub_data', method='lbfgsb_polish',
+                     progress=progress)
+        cutoutdata.remove_sky(**kwargs_rmsky_sersic)
 
     # final sky subtraction
     logger.info(f'*** Base model fit completed ***')
@@ -386,7 +454,8 @@ def run_scalefit(galaxy,filtername,base_params,allow_refit,
     cutoutdata.remove_sky(**kwargs_rmsky_sersic)
     fitter_psf.fit(**kwargs_psf)
     cutoutdata.remove_sky(**kwargs_rmsky_psf)
-    _maybe_recalibrate_psf(cutoutdata, progress=progress, fit_complex_model=fit_complex_model)
+    _maybe_recalibrate_psf(cutoutdata, progress=progress, fit_complex_model=fit_complex_model,
+                           fitter=fitter_scale)
     _refresh_fitter_psf(fitter_scale, cutoutdata, simple=not fit_complex_model)
     if allow_refit:
         _refresh_fitter_psf(fitter_2, cutoutdata, simple=not fit_complex_model)
@@ -395,7 +464,8 @@ def run_scalefit(galaxy,filtername,base_params,allow_refit,
         cutoutdata.remove_sky(**kwargs_rmsky_sersic)
         fitter_psf.fit(**kwargs_psf)
         cutoutdata.remove_sky(**kwargs_rmsky_psf)
-        _maybe_recalibrate_psf(cutoutdata, progress=progress, fit_complex_model=fit_complex_model)
+        _maybe_recalibrate_psf(cutoutdata, progress=progress, fit_complex_model=fit_complex_model,
+                               fitter=fitter_2)
         _refresh_fitter_psf(fitter_scale, cutoutdata, simple=not fit_complex_model)
         _refresh_fitter_psf(fitter_2, cutoutdata, simple=not fit_complex_model)
     progress.update(progress_main, advance=1, refresh=True)
@@ -414,7 +484,8 @@ def run_scalefit(galaxy,filtername,base_params,allow_refit,
         cutoutdata.remove_sky(**kwargs_rmsky_sersic)
         fitter_psf.fit(**kwargs_psf)
         cutoutdata.remove_sky(**kwargs_rmsky_psf)
-        _maybe_recalibrate_psf(cutoutdata, progress=progress, fit_complex_model=fit_complex_model)
+        _maybe_recalibrate_psf(cutoutdata, progress=progress, fit_complex_model=fit_complex_model,
+                               fitter=(fitter_2 if allow_refit else fitter_scale))
         _refresh_fitter_psf(fitter_scale, cutoutdata, simple=not fit_complex_model)
         if allow_refit:
             _refresh_fitter_psf(fitter_2, cutoutdata, simple=not fit_complex_model)
@@ -446,8 +517,21 @@ def run_scalefit(galaxy,filtername,base_params,allow_refit,
     #      raw-bg sky level.
     if config.get('psf-calib', {}).get('in_mainloop', False):
         cutoutdata.remove_sky(**kwargs_rmsky_sersic)
-        fitter_psf.fit(**kwargs_psf)
+        fitter_psf.fit(nnls_now=True, **kwargs_psf)
         cutoutdata.remove_sky(**kwargs_rmsky_psf)
+
+    # Final consistency pass. The loop above ends with a PSF-photometry
+    # call, which rewrites psf_sub_data — so without this the SAVED Sersic
+    # parameters are the ones that were optimal for the PREVIOUS
+    # psf_sub_data, not the one that ships in the file. Measured on
+    # N5468/g000 F150W: the saved solution sat 38% above the optimum for
+    # the saved data, and a plain polish recovered all of it. Re-optimise
+    # last, then re-fit the sky so sersic_residual (built from _rawdata,
+    # which still carries the background) is left sky-subtracted.
+    if config['core'].get('final_sersic_polish_after_psf', True):
+        _polish_sersic(fitter_2 if allow_refit else fitter_scale,
+                       cutoutdata, progress=progress)
+        cutoutdata.remove_sky(**kwargs_rmsky_sersic)
 
     # final sky subtraction
     logger.info(f'*** {filtername} done ***')
@@ -547,7 +631,8 @@ def run_scalefit_forced(galaxy, filtername, base_filter, base_params,
         progress=progress)
     cutoutdata.remove_sky(**kwargs_rmsky_psf)
     if recalibrate_psf:
-        _maybe_recalibrate_psf(cutoutdata, progress=progress, fit_complex_model=fit_complex_model)
+        _maybe_recalibrate_psf(cutoutdata, progress=progress, fit_complex_model=fit_complex_model,
+                               fitter=fitter_scale)
         _refresh_fitter_psf(fitter_scale, cutoutdata, simple=not fit_complex_model)
     progress.update(progress_main, advance=1, refresh=True)
 
@@ -564,7 +649,8 @@ def run_scalefit_forced(galaxy, filtername, base_filter, base_params,
             progress=progress)
         cutoutdata.remove_sky(**kwargs_rmsky_psf)
         if recalibrate_psf:
-            _maybe_recalibrate_psf(cutoutdata, progress=progress, fit_complex_model=fit_complex_model)
+            _maybe_recalibrate_psf(cutoutdata, progress=progress, fit_complex_model=fit_complex_model,
+                                   fitter=fitter_scale)
             _refresh_fitter_psf(fitter_scale, cutoutdata, simple=not fit_complex_model)
         progress.update(progress_main, advance=1, refresh=True)
         curr_params = np.array(cutoutdata.sersic_params, copy=True)

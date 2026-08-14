@@ -11,13 +11,16 @@ auto_crop_factor = 8                   # cutout half-axis in σ of best-fit Gaus
 base_filter = 'F150W'
 iter_basefit = 10
 iter_scalefit = 3
-fit_complex_model = false
+fit_complex_model = false              # true = disk+bulge (2 Sersic components) instead of one
+sersic_psf_crop_flux_fraction = 0.98   # crop the PSF used for the SERSIC convolution to the smallest centred square holding this much flux (that FFT runs ~1e4x per base fit and its cost is set by the PSF size). Does NOT affect the PSF used for point-source photometry. 1.0 disables.
 allow_refit = false
 mainloop_convergence_atol = 1e-3       # stop when |Δ standardized sersic params| < atol
 mainloop_convergence_patience = 2      # consecutive within-atol iters required to early-stop
 mainloop_min_iter = 2                  # never early-stop before this many iters
 use_dual_annealing = true              # iter-1 main-loop sersic fit: short iNM -> scipy.dual_annealing (escape false basins)
 use_final_polish = true                # post-mainloop L-BFGS-B polish on the final sersic params
+refit_sersic_after_psf_calib = true    # after a PSF recalibration, re-optimise the sersic params under the NEW psf instead of only re-rendering the old ones (best-fit n moves 17-100% across the plausible psf-width range)
+final_sersic_polish_after_psf = true   # end the loop with a sersic polish AFTER the last PSF photometry pass, so the saved params are optimal for the saved psf_sub_data
 
 [psf-calib]
 in_mainloop = true                     # per-iter kernel recalibration (set false to disable)

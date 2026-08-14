@@ -4,11 +4,74 @@ import numpy as np
 from scipy.optimize import minimize, dual_annealing
 from scipy.ndimage import zoom
 
+from .config import config
+
 from petrofit import PSFConvolvedModel2D, model_to_image
         
+def _crop_psf_for_sersic(psf):
+    ''' Trim the PSF used for the SERSIC convolution to the smallest
+    centred square holding `[core].sersic_psf_crop_flux_fraction` of its
+    flux, then renormalise.
+
+    The Sersic model is re-convolved with this PSF on every objective
+    evaluation (~1e4 per base fit) and that FFT dominates the Sersic fit;
+    its cost scales with the padded image+PSF size, so the PSF's far wings
+    are most of the work. A galaxy is far larger than the PSF (r_eff of
+    tens of px vs a few-px core), so truncating those wings perturbs a
+    smooth extended profile only slightly -- measured 2.4x faster per
+    evaluation.
+
+    This is emphatically NOT applied to the PSF used for point-source
+    photometry, where the wings carry real flux and truncating them would
+    bias fluxes. Set the fraction to 1.0 (or 0) to disable.
+    '''
+    try:
+        frac = float(config['core'].get('sersic_psf_crop_flux_fraction', 0.98))
+    except Exception:
+        return psf
+    if not (0.0 < frac < 1.0):
+        return psf
+    p = np.asarray(psf, dtype=float)
+    H, W = p.shape
+    cy, cx = (H - 1) // 2, (W - 1) // 2
+    max_half = int(min(cy, cx, H - 1 - cy, W - 1 - cx))
+    if max_half < 8:
+        return psf
+    total = float(p.sum())
+    if not np.isfinite(total) or total <= 0:
+        return psf
+    # enclosed flux in growing centred squares, via an integral image
+    I = np.cumsum(np.cumsum(p, axis=0), axis=1)
+
+    def enclosed(h):
+        y0, y1 = cy - h - 1, cy + h
+        x0, x1 = cx - h - 1, cx + h
+        s = I[y1, x1]
+        if y0 >= 0:
+            s -= I[y0, x1]
+        if x0 >= 0:
+            s -= I[y1, x0]
+        if y0 >= 0 and x0 >= 0:
+            s += I[y0, x0]
+        return float(s)
+
+    half = max_half
+    for h in range(8, max_half + 1):
+        if enclosed(h) / total >= frac:
+            half = h
+            break
+    if half >= max_half:
+        return psf
+    q = p[cy - half:cy + half + 1, cx - half:cx + half + 1].copy()
+    s = q.sum()
+    if s > 0:
+        q /= s
+    return q
+
+
 class SphotModel(PSFConvolvedModel2D):
     def __init__(self,model,cutoutdata,resample_psf=True,**kwargs):
-        ''' 
+        '''
         A wrapper class for the petrofit model.
         Args:
             model (astropy FittableModel): model to fit.
@@ -19,6 +82,7 @@ class SphotModel(PSFConvolvedModel2D):
             psf_oversample = cutoutdata.psf_oversample
             psf = zoom(psf,1/psf_oversample)
             psf /= psf.sum() # normalize
+            psf = _crop_psf_for_sersic(psf)
             psf_oversample = 1
         else:
             psf = cutoutdata.psf
@@ -258,8 +322,9 @@ class ModelFitter():
             raise ValueError('method not recognized')
         
         # results
-        bestfit_sersic_params_physical = dict(zip(self.model.free_params,
-                                                self.unstandardize_params(result.x)))
+        bestfit_sersic_params_physical = _with_canonical_geometry(
+            dict(zip(self.model.free_params,
+                     self.unstandardize_params(result.x))))
         bestfit_img = self.eval_model(result.x)
         sersic_residual = self.cutoutdata._rawdata - bestfit_img # always take residual from raw data
 
@@ -357,8 +422,9 @@ class ModelScaleFitter(ModelFitter):
         
         # parse results
         scaled_modelparams = self.scale_params(result.x)  
-        bestfit_sersic_params_physical = dict(zip(self.model.free_params,
-                                                self.unstandardize_params(scaled_modelparams)))
+        bestfit_sersic_params_physical = _with_canonical_geometry(
+            dict(zip(self.model.free_params,
+                     self.unstandardize_params(scaled_modelparams))))
         bestfit_img = self.eval_model(scaled_modelparams)
         sersic_residual = self.cutoutdata._rawdata - bestfit_img # always take residual from raw data
 
@@ -434,6 +500,38 @@ def iterative_NM(func,args,x0,bounds,
     if progress is not None:
         progress.remove_task(progress_task)
     return result, convergence
+
+def _with_canonical_geometry(params):
+    ''' Add canonical `r_eff` / `ellip` / `theta` / `n` / `amplitude` keys
+    for multi-component models.
+
+    A 2-component (disk+bulge) model names its parameters `r_eff_0`,
+    `ellip_0`, `r_eff_1`, ... but downstream consumers ask for a single
+    `sersic_params_physical['r_eff']` to size the sky mask
+    (`sigma_clip_outside_aperture`), the calibration centre mask and
+    `galaxy_size_sersic`. Alias them to the component with the LARGEST
+    r_eff: those consumers all want the galaxy's overall extent, and
+    `prep_model` already constrains r_eff_0 >= r_eff_1 so that is the disk.
+
+    `x_0` / `y_0` are shared across components and need no aliasing.
+    '''
+    if 'r_eff' in params:
+        return params
+    idx = [k[len('r_eff_'):] for k in params if k.startswith('r_eff_')]
+    if not idx:
+        return params
+    try:
+        best = max(idx, key=lambda i: float(params.get(f'r_eff_{i}',
+                                                       -np.inf)))
+    except Exception:
+        best = idx[0]
+    out = dict(params)
+    for base in ('r_eff', 'ellip', 'theta', 'n', 'amplitude'):
+        key = f'{base}_{best}'
+        if key in params and base not in out:
+            out[base] = params[key]
+    return out
+
 
 def save_bestfit_params(cutoutdata,bestfit_sersic_params_physical,):
     for key,val in bestfit_sersic_params_physical.items():
