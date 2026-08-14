@@ -116,6 +116,12 @@ def _refresh_fitter_psf(fitter, cutoutdata, simple=True):
     """
     if fitter is None:
         return
+    # cd.psf is only ever REASSIGNED (calibrate_psf_step, blur_psf), so an
+    # unchanged object id means the captured PSF copy is still current --
+    # e.g. every iteration after the calibrator freezes. Skip the rebuild
+    # (PSF zoom + crop + model construction) in that case.
+    if getattr(fitter, '_sphot_psf_id', None) == id(cutoutdata.psf):
+        return
     try:
         new_model = prep_model(cutoutdata, simple=simple)
         old_x0 = getattr(fitter.model, 'x0', None)
@@ -129,6 +135,7 @@ def _refresh_fitter_psf(fitter, cutoutdata, simple=True):
             new_model.x0 = old_x0
         fitter.model = new_model
         fitter.bounds_physical = new_model.get_bounds()
+        fitter._sphot_psf_id = id(cutoutdata.psf)
     except Exception as e:
         logger.warning(f'_refresh_fitter_psf failed: {e}')
 
@@ -370,7 +377,13 @@ def run_basefit(galaxy,base_filter,
     # for a photometry pass — cd.residual still reflects the previous
     # iteration's PSF. Run one final fitter_psf.fit() so cd.residual
     # matches the saved kernel_params.
-    if config.get('psf-calib', {}).get('in_mainloop', False):
+    # Sync cd.residual with the last calibrated kernel. When the final
+    # polish is enabled it ends with its own full photometry pass, which
+    # subsumes this one -- running both meant TWO back-to-back full
+    # ladder+refit passes (~64 s each on a crowded field) producing the
+    # same products.
+    if (config.get('psf-calib', {}).get('in_mainloop', False)
+            and not use_final_polish):
         fitter_psf.fit(nnls_now=True, **kwargs_psf)
         cutoutdata.remove_sky(**kwargs_rmsky_psf)
 

@@ -173,9 +173,16 @@ class PSFFitter():
             x, y = x[ok], y[ok]
 
             data = np.asarray(data, dtype=float)
+            # Match the full path: solve on Background2D-subtracted data.
+            # NNLS cannot compensate a positive pedestal with negative
+            # fluxes, so solving the raw image biased warm fluxes upward.
+            try:
+                data_solve, _, _ = subtract_background(data)
+            except Exception:
+                data_solve = data
             H, W = data.shape
             mask = _build_center_mask((H, W), center_mask_params)
-            b = data.ravel().astype(np.float32)
+            b = data_solve.ravel().astype(np.float32)
             invalid = ~np.isfinite(b)
             if mask is not None:
                 invalid |= mask.ravel()
