@@ -271,12 +271,63 @@ class CutoutData():
         self._bkg_level = bkg_level
         self.data = self._rawdata.copy() - bkg_level
         
-    def perform_bkg_stats(self,plot=False):
-        data_annulus = get_data_annulus(self._rawdata,4*self.galaxy_size,plot=plot)
-        bkg_mean = np.nanmean(data_annulus)
-        bkg_std = np.nanstd(data_annulus)
-        self.remove_bkg(bkg_mean) # this updates data internally
-        self.data_error = np.ones_like(self.data)*bkg_std
+    def perform_bkg_stats(self, plot=False,
+                          mask_factor=4.0, max_masked_frac=2.0/3.0):
+        ''' Estimate the cutout's sky level and per-pixel noise.
+
+        Builds a galaxy mask (elliptical when self.ellip/theta are
+        already known, otherwise circular) centred on self.x0_guess /
+        self.y0_guess at radius `mask_factor × self.galaxy_size`. If
+        that mask would cover more than `max_masked_frac` of the
+        cutout (default 2/3), the galaxy-size estimate is suspiciously
+        large relative to the cutout — most likely a small/bad
+        size_guess on a busy field, where keeping a 99%-masked sky
+        sample would force the bkg fit onto a few corner pixels and
+        bias it low. In that case the mask is iteratively shrunk
+        until at least 1/3 of the pixels remain for sky stats.
+
+        Sky level and std are then computed via sigma_clipped_stats
+        on the un-masked pixels: median for the level (robust to
+        residual source flux) and the clipped std for the per-pixel
+        noise.
+        '''
+        from astropy.stats import sigma_clipped_stats
+        H, W = self._rawdata.shape
+        x_c = float(getattr(self, 'x0_guess', W / 2.0))
+        y_c = float(getattr(self, 'y0_guess', H / 2.0))
+        a = float(mask_factor) * float(self.galaxy_size)
+        ellip = max(0.0, min(0.95, float(getattr(self, 'ellip', 0.0))))
+        theta = float(getattr(self, 'theta', 0.0))
+        yy, xx = np.indices((H, W), dtype=float)
+        dx = xx - x_c; dy = yy - y_c
+        ct, st = np.cos(theta), np.sin(theta)
+        xr = dx * ct + dy * st
+        yr = -dx * st + dy * ct
+        def make_mask(a_val):
+            b_val = a_val * (1.0 - ellip)
+            return (xr / a_val) ** 2 + (yr / b_val) ** 2 < 1.0
+        mask = make_mask(a)
+        N_total = H * W
+        cap = max_masked_frac * N_total
+        if mask.sum() > cap:
+            for _ in range(50):
+                a *= 0.9
+                if a < 1.0:
+                    break
+                mask = make_mask(a)
+                if mask.sum() <= cap:
+                    break
+            logger.warning(
+                f'perform_bkg_stats: galaxy mask shrunk to '
+                f'a={a:.2f} px ({mask.sum() / N_total * 100:.0f}% '
+                f'pixels masked); galaxy_size={self.galaxy_size:.2f} '
+                f'is likely too large for cutout {H}x{W}.')
+        sky_pix = self._rawdata[(~mask) & np.isfinite(self._rawdata)]
+        if sky_pix.size < 10:
+            sky_pix = self._rawdata[np.isfinite(self._rawdata)]
+        _mean, bkg_median, bkg_std = sigma_clipped_stats(sky_pix, sigma=3.0)
+        self.remove_bkg(float(bkg_median))
+        self.data_error = np.ones_like(self.data) * float(bkg_std)
         
     def remove_sky(self,fit_to='residual_masked',remove_from='psf_sub_data',**kwargs):
         N_repeat = kwargs.get('repeat',1)
@@ -407,6 +458,9 @@ class MultiBandCutout():
         # previous-kernel image used by the skip-on-stable check.
         TRANSIENT_CUTOUT_ATTRS = {
             '_calibrate_psf_prev_kernel',
+            '_ipsf_call_count',
+            '_calib_frozen',
+            '_calib_stable_count',
         }
         with h5py.File(filepath,'w') as f:
             for g_key,g_val in self.__dict__.items():
@@ -568,6 +622,9 @@ def read_sphot_h5(filepath):
     TRANSIENT_CUTOUT_ATTRS = {
         '_calibrate_psf_kernel_iter',
         '_calibrate_psf_prev_kernel',
+        '_ipsf_call_count',
+        '_calib_frozen',
+        '_calib_stable_count',
     }
     galaxy_loaded = MultiBandCutout()
     with h5py.File(filepath,'r') as f:

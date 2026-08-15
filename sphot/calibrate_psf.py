@@ -20,6 +20,8 @@ from typing import Sequence
 
 import numpy as np
 
+from .logging import logger
+
 
 # =====================================================================
 # Section 1 — utility
@@ -125,6 +127,22 @@ def _empirical_fwhm_factor(psf_image, oversample, psf_sigma,
     if not np.isfinite(psf_sigma) or psf_sigma <= 0:
         return None
     return fwhm_data_px / float(psf_sigma)
+
+
+def _calc_psf_sigma_safe(psf_image, oversample, fallback):
+    ''' Gaussian-equivalent sigma of `psf_image` in data px, falling back
+    to `fallback` if the fit fails. Used to size the kernel-fit stamp from
+    the LIBRARY PSF (a fixed instrument property) rather than from the
+    evolving calibrated width. '''
+    try:
+        from .data import _calc_psf_sigma
+        s = float(_calc_psf_sigma(np.asarray(psf_image, dtype=float),
+                                  int(oversample)))
+        if np.isfinite(s) and s > 0:
+            return s
+    except Exception as e:
+        logger.debug(f'_calc_psf_sigma_safe: falling back ({e})')
+    return float(fallback)
 
 
 def effective_fwhm_data_px(cutoutdata):
@@ -258,6 +276,7 @@ def _per_source_residual_score_multi(
     *,
     all_x, all_y, all_flux=None,
     max_neighbors=15, neighbor_pad=4.0,
+    anchor_weights=None, bkg_order=None,
 ):
     """Per-anchor stamp residual with a **multi-source** closed-form
     least-squares flux fit (positions pinned to iPSF centroids).
@@ -279,6 +298,10 @@ def _per_source_residual_score_multi(
     all_flux : 1D array, optional
         Flux per source; used to keep the brightest neighbours when
         a stamp's neighbour count exceeds `max_neighbors`.
+    anchor_weights : 1D array, optional
+        Per-anchor scalar weight (length == len(x_anchor)) applied to
+        the L² contribution of that stamp. Used by the caller to
+        down-weight anchors that look non-point-like. None → uniform.
     """
     K_oversampled = _kernel_data_to_oversampled(
         K_data, psf_oversample, library_psf_oversampled.shape)
@@ -292,10 +315,31 @@ def _per_source_residual_score_multi(
     all_y = np.asarray(all_y, dtype=float)
     if all_flux is not None:
         all_flux = np.asarray(all_flux, dtype=float)
+    if anchor_weights is None:
+        anchor_weights = np.ones(len(x_anchor), dtype=float)
+    else:
+        anchor_weights = np.asarray(anchor_weights, dtype=float)
+    # Per-stamp background basis. A single constant pedestal cannot
+    # represent the smooth flux that is genuinely present inside an anchor
+    # stamp (galaxy disc, sky gradient, the outer wings of bright
+    # neighbours), so the fit soaks it up by BROADENING the PSF instead —
+    # and the bigger the stamp, the more extended flux there is to absorb.
+    # Measured: with a constant pedestal the recovered kernel width for
+    # F277W moves 2.1 -> 4.5 px as the stamp half goes 8 -> 24 px; with a
+    # quadratic background it is 2.0 -> 2.3 (stamp-independent). Widths are
+    # then set by the PSF shape rather than by an arbitrary stamp size.
+    if bkg_order is None:
+        from .config import config as _cfg
+        bkg_order = int(_cfg.get('psf-calib', {}).get(
+            'kernel_fit_bkg_order', 2))
+    bkg_order = max(0, min(2, int(bkg_order)))
 
     total = 0.0
-    n_pix = 0
-    for x_a, y_a in zip(x_anchor, y_anchor):
+    n_pix = 0.0
+    for i_anc, (x_a, y_a) in enumerate(zip(x_anchor, y_anchor)):
+        w_i = float(anchor_weights[i_anc]) if i_anc < len(anchor_weights) else 1.0
+        if w_i <= 0:
+            continue
         ix = int(round(x_a)); iy = int(round(y_a))
         if (ix - half < 0 or iy - half < 0
                 or ix + half + 1 > W or iy + half + 1 > H):
@@ -326,13 +370,24 @@ def _per_source_residual_score_multi(
             # happen, but be defensive: fall back to anchor-only.
             nx = np.array([x_a]); ny = np.array([y_a]); n_n = 1
 
-        # Design matrix: one column per source + 1 pedestal column.
-        L = np.empty((stamp.size, n_n + 1), dtype=float)
+        # Design matrix: one column per source + background basis.
+        n_bkg = 1 if bkg_order == 0 else (3 if bkg_order == 1 else 6)
+        L = np.empty((stamp.size, n_n + n_bkg), dtype=float)
         for j in range(n_n):
             mj = evaluate_psf(xx, yy, nx[j], ny[j])
             mj = np.where(np.isfinite(mj), mj, 0.0)
             L[:, j] = mj.ravel()
-        L[:, -1] = 1.0
+        L[:, n_n] = 1.0
+        if bkg_order >= 1:
+            # normalised stamp coordinates keep the basis well-conditioned
+            u = (xx.ravel() - x_a) / max(float(half), 1.0)
+            v = (yy.ravel() - y_a) / max(float(half), 1.0)
+            L[:, n_n + 1] = u
+            L[:, n_n + 2] = v
+            if bkg_order >= 2:
+                L[:, n_n + 3] = u * u
+                L[:, n_n + 4] = v * v
+                L[:, n_n + 5] = u * v
 
         finite_flat = finite.ravel().astype(float)
         L_w = L * finite_flat[:, None]
@@ -344,9 +399,9 @@ def _per_source_residual_score_multi(
         except Exception:
             # Numerically degenerate (e.g., colocated sources); skip.
             resid = b_w
-        total += float(np.sum(resid * resid))
-        n_pix += int(finite.sum())
-    return total / max(n_pix, 1)
+        total += w_i * float(np.sum(resid * resid))
+        n_pix += w_i * float(finite.sum())
+    return total / max(n_pix, 1.0)
 
 
 def _score_blur_candidate_residual(
@@ -538,6 +593,7 @@ def _fit_kernel_to_data(
     *, on_seed_done=None, objective='multi_source',
     all_x=None, all_y=None, all_flux=None,
     max_neighbors=15, neighbor_pad=4.0,
+    anchor_weights=None,
 ):
     """Fit a single-parameter kernel `family` to per-source residual.
 
@@ -560,7 +616,8 @@ def _fit_kernel_to_data(
                 K_data, library_psf_oversampled, psf_oversample,
                 data, x_arr, y_arr, half=half,
                 all_x=all_x, all_y=all_y, all_flux=all_flux,
-                max_neighbors=max_neighbors, neighbor_pad=neighbor_pad)
+                max_neighbors=max_neighbors, neighbor_pad=neighbor_pad,
+                anchor_weights=anchor_weights)
     else:
         def loss(K_data):
             return _per_source_residual_score(
@@ -633,14 +690,14 @@ def _single_pass_phot(data, psf_oversampled, oversample, psf_sigma,
     scan candidate evaluation.
     """
     from photutils.psf import ImagePSF, PSFPhotometry, SourceGrouper
+    from .psf import make_image_psf
     from photutils.detection import DAOStarFinder
     from photutils.background import MMMBackground, LocalBackground, MADStdBackgroundRMS
     from . import psf as sp
     from .psf import do_psf_photometry
     from .config import config
 
-    psf_model = ImagePSF(psf_oversampled, flux=1.0,
-                         oversampling=oversample, fill_value=0.0)
+    psf_model = make_image_psf(psf_oversampled, oversample, fill_value=0.0)
     if th is None:
         th = float(config['psf'].get('th_min', 1.0))
     bkg_std = float(MADStdBackgroundRMS()(np.nan_to_num(data, nan=0.0)))
@@ -756,11 +813,10 @@ def _scan_dao_fwhm_factor_nnls(
     from photutils.psf import ImagePSF
     from photutils.detection import DAOStarFinder
     from photutils.background import MADStdBackgroundRMS
-    from .psf import forced_psf_photometry
+    from .psf import forced_psf_photometry, make_image_psf
     from .config import config
 
-    psf_model = ImagePSF(psf_oversampled, flux=1.0,
-                         oversampling=oversample, fill_value=0.0)
+    psf_model = make_image_psf(psf_oversampled, oversample, fill_value=0.0)
     if th is None:
         th = float(config['psf'].get('th_min', 1.0))
     bkg_std = float(MADStdBackgroundRMS()(np.nan_to_num(data, nan=0.0)))
@@ -1070,12 +1126,16 @@ def calibrate_psf_step(
 
     # Build the center-exclusion mask used by the bootstrap blur scan,
     # fwhm scan, and anchor selection. Radius is in units of the
-    # galaxy's own size: cd.galaxy_size_sersic when a Sersic fit has
-    # produced an r_eff, otherwise cd.galaxy_size (initial Gaussian
-    # σ-guess from prep). This is intentionally distinct from the iPSF
-    # mask in [psf] which is sized in PSF FWHM — the calibrator needs
-    # an aggressive mask that covers the whole bright galaxy region
-    # so Sersic-fit residuals don't slip through as fake sources.
+    # galaxy's own size: cd.galaxy_size (the initial Gaussian σ-guess
+    # from prep), intentionally NOT cd.galaxy_size_sersic. A runaway
+    # Sersic fit can return r_eff comparable to the cutout extent —
+    # the resulting mask would saturate at the 0.45×min(shape) cap and
+    # swallow most of the cutout, starving the kernel fit of anchors.
+    # galaxy_size is a robust Gaussian σ estimate that doesn't blow up.
+    # This is intentionally distinct from the iPSF mask in [psf] which
+    # is sized in PSF FWHM — the calibrator needs an aggressive mask
+    # that covers the whole bright galaxy region so Sersic-fit
+    # residuals don't slip through as fake sources.
     center_mask = None
     center_mask_params = None
     try:
@@ -1083,8 +1143,7 @@ def calibrate_psf_step(
         cm_factor = float(config.get('psf-calib', {}).get(
             'center_mask_r_in_galaxy_size', 1.5))
         if cm_factor > 0:
-            gsize = float(getattr(cutoutdata, 'galaxy_size_sersic',
-                                  cutoutdata.galaxy_size))
+            gsize = float(cutoutdata.galaxy_size)
             # Elliptical mask shaped by the Sersic ellip + theta so
             # inclined galaxies aren't masked as a face-on circle.
             # semi-major a = gsize × cm_factor (along Sersic +theta axis)
@@ -1121,19 +1180,35 @@ def calibrate_psf_step(
     # is scoped to calibration only: cd.psf_table / psf_sub_data (the
     # science products) are never written here, and the main iPSF fit is
     # untouched.
+    # calib_xy_bounds <= 0 (or absent) reuses the science cd.psf_table
+    # instead of running a dedicated anchor re-photometry.
+    # DO NOT ENABLE without beating the 2026-08-14 retest: reuse was tried
+    # after final_refit_fix_positions removed the flag-32 spam and
+    # kernel_fit_bkg_order=2 fixed the width objective, on the theory that
+    # the dedicated photometry's premises were gone -- and the width fit
+    # STILL collapsed (F277W scatter 0.29 -> 1.41 across hosts with the
+    # sigma=5.0 bound saturation returning; F160W 0.24 -> 0.84 with one
+    # host at 0.10). Pinned anchor POSITIONS are themselves a sufficient
+    # cause of the instability, independent of flags and objective. The
+    # free-centroid re-photometry stays.
     calib_xy_bounds = config.get('psf-calib', {}).get('calib_xy_bounds', None)
-    if calib_xy_bounds is not None:
+    if calib_xy_bounds is not None and float(calib_xy_bounds) > 0:
         from .psf import iterative_psf_fitting
         from photutils.psf import ImagePSF
-        anchor_psf_model = ImagePSF(
-            np.asarray(cutoutdata.psf, dtype=float), flux=1.0,
-            x_0=0, y_0=0, oversampling=psf_oversample, fill_value=0.0)
+        from .psf import make_image_psf
+        anchor_psf_model = make_image_psf(
+            cutoutdata.psf, psf_oversample, fill_value=0.0, x_0=0, y_0=0)
         # Single low-threshold pass: the full high->low ladder early-exits
         # on consecutive-empty high thresholds before reaching th_min where
         # the sources are; the joint refit's own leftover-detection loop
         # recovers fainter sources iteratively.
-        th_min = config['psf'].get('th_min', 1.5)
-        threshold_list = np.array([float(th_min)])
+        # Uses `[psf-calib].calib_th` (separate from `[psf].th_min` so a
+        # deeper science detection floor doesn't flood the calibrator with
+        # noise spikes that fail quality cuts → 0 anchors → bootstrap σ
+        # saturates at the upper bound, e.g. F277W with library FWHM ~1.5
+        # px goes to bootstrap when th=2). Defaults to 3.0.
+        calib_th = float(config.get('psf-calib', {}).get('calib_th', 5.0))
+        threshold_list = np.array([calib_th])
         _saved_xyb = config['psf'].get('final_refit_xy_bounds', 0.0)
         config['psf']['final_refit_xy_bounds'] = float(calib_xy_bounds)
         try:
@@ -1210,7 +1285,10 @@ def calibrate_psf_step(
     x = np.asarray(phot_pass['x_fit'], dtype=float)
     y = np.asarray(phot_pass['y_fit'], dtype=float)
     f = np.asarray(phot_pass['flux_fit'], dtype=float)
-    valid = np.isfinite(x) & np.isfinite(y) & np.isfinite(f) & (f > 0)
+    ferr = np.asarray(phot_pass['flux_err'], dtype=float)
+    qfit_arr = np.asarray(phot_pass['qfit'], dtype=float)
+    valid = (np.isfinite(x) & np.isfinite(y) & np.isfinite(f) & (f > 0)
+             & np.isfinite(ferr) & (ferr > 0) & np.isfinite(qfit_arr))
     # Drop any anchors that fall inside the centre-mask. iPSF already
     # excludes them via PSFPhotometry's mask, but stale cd.psf_table
     # from older runs may still carry such rows. Matches the elliptical
@@ -1228,16 +1306,45 @@ def calibrate_psf_step(
             y_rot = -dx * st + dy * ct
             valid &= (x_rot / a_c) ** 2 + (y_rot / b_c) ** 2 > 1.0
     x, y, f = x[valid], y[valid], f[valid]
+    ferr = ferr[valid]
+    qfit_arr = qfit_arr[valid]
     if len(x) == 0:
         log('[calibrate_psf_step] no anchors outside mask; skipping')
         return None
-    # Full anchor pool for the multi-source neighbour lookup; the top-K
-    # brightest are the fit anchors.
+    # Full anchor pool for the multi-source neighbour lookup.
     all_x_pass = x.copy()
     all_y_pass = y.copy()
     all_flux_pass = f.copy()
-    order = np.argsort(-f)[:K]
-    x_anchor, y_anchor, f_anchor = x[order], y[order], f[order]
+
+    # Anchor selection: rank by quality (qfit ascending) with a
+    # brightness saturation so we don't pick noise-floor faint anchors
+    # over bright clean ones. Score = √(SNR) / qfit_eff:
+    #   • qfit (residual quality) leads — blends/merged detections
+    #     have high qfit and are demoted.
+    #   • √(SNR) gives brightness sub-square role — bright sources
+    #     are preferred at equal qfit, but not by F² (which biases
+    #     toward bright blends, as we saw with the Fisher attempt).
+    # Anchors with SNR < 3 are floored to SNR=3 in the rank so a
+    # noise-floor detection with great-looking qfit doesn't outrank
+    # a healthy bright source.
+    snr_full = f / np.maximum(ferr, 1e-6)
+    qfit_median = float(np.nanmedian(qfit_arr[np.isfinite(qfit_arr)]))
+    qfit_floor = max(qfit_median, 1e-3)
+    qfit_eff_for_rank = np.maximum(qfit_arr, qfit_floor * 0.1)
+    snr_for_rank = np.maximum(snr_full, 3.0)
+    rank_score = np.sqrt(snr_for_rank) / qfit_eff_for_rank
+    rank_score = np.where(np.isfinite(rank_score) & (rank_score > 0),
+                          rank_score, 0.0)
+
+    order = np.argsort(-rank_score)[:K]
+    x_anchor = x[order]; y_anchor = y[order]; f_anchor = f[order]
+    qfit_top = qfit_arr[order]
+    log(f'[calibrate_psf_step] anchor selection by quality: '
+        f'median qfit={qfit_median:.4f}, '
+        f'top-K qfit range={float(np.nanmin(qfit_top)):.4f}-'
+        f'{float(np.nanmax(qfit_top)):.4f}, '
+        f'SNR range={snr_full[order].min():.1f}-'
+        f'{snr_full[order].max():.1f}')
     n_pass_input = int(len(x))
 
     # 2. kernel fit (per-source residual against sersic_residual)
@@ -1249,21 +1356,50 @@ def calibrate_psf_step(
     max_neighbors = int(cfg_calib.get('kernel_fit_max_neighbors', 15))
     neighbor_pad = float(cfg_calib.get('kernel_fit_neighbor_pad_pix', 4.0))
 
-    # Stamp size: multi_source scales with the effective PSF so the
-    # wings actually fit inside the stamp; single_source keeps 17×17.
+    # Stamp size. This MUST NOT depend on the previous iteration's kernel
+    # width. It used to be sized from sqrt(psf_sigma^2 + sigma_prev^2),
+    # which closed a positive feedback loop: a wider estimate produced a
+    # bigger stamp, a bigger stamp prefers a wider estimate (measured:
+    # F160W recovers 2.2 px at half=8 and 4.5 px at half=24 on the same
+    # data). Both psf_sigma and sigma_prev drift with the calibration, so
+    # the loop had no fixed point and the recovered width scattered
+    # galaxy-to-galaxy on the same filter (F160W: 2.46 vs 3.03).
+    #
+    # Size it from the LIBRARY PSF instead — a fixed property of the
+    # instrument+filter, identical on every iteration and every galaxy.
     stamp_half_min = int(cfg_calib.get('kernel_fit_stamp_half_min', 8))
-    stamp_half_factor = float(cfg_calib.get(
-        'kernel_fit_stamp_half_in_sigmaeff', 3.0))
     if objective == 'multi_source':
-        if prev_params is not None and 'sigma_data' in prev_params:
-            sigma_kernel_prev = float(prev_params['sigma_data'])
-        else:
-            sigma_kernel_prev = 1.5
-        sigma_eff_est = float(np.sqrt(psf_sigma ** 2 + sigma_kernel_prev ** 2))
+        sigma_library = float(_calc_psf_sigma_safe(library_norm,
+                                                   psf_oversample, psf_sigma))
+        stamp_half_factor = float(cfg_calib.get(
+            'kernel_fit_stamp_half_in_sigma_library', 4.0))
         half_anchor = max(stamp_half_min,
-                          int(np.ceil(stamp_half_factor * sigma_eff_est)))
+                          int(np.ceil(stamp_half_factor * sigma_library)))
     else:
         half_anchor = stamp_half_min
+
+    # Per-anchor weight in the kernel-fit L² objective. Two factors:
+    #   (1) Brightness equalisation. Raw L² stamp contribution scales
+    #       as F²·Σδ² + Σnoise² — without normalisation the brightest
+    #       anchors dominate by F². Divide by F_eff² so clean bright
+    #       and clean faint anchors contribute equally per unit
+    #       information. Floor F_eff at the stamp-integrated bkg
+    #       noise so near-noise anchors don't get amplified.
+    #   (2) qfit quality. exp(-(qfit/qfit_med)²) demotes anchors with
+    #       a bad PSF-model fit (blends, merged detections, phantoms)
+    #       exponentially. Clean fits (qfit < median) stay near 1;
+    #       qfit = 2×median → weight 0.018, blended.
+    n_stamp_pix = (2 * half_anchor + 1) ** 2
+    F_noise_floor = bkg_std * float(np.sqrt(n_stamp_pix))
+    F_eff = np.maximum(f_anchor, F_noise_floor)
+    brightness_weights = (np.median(F_eff) / F_eff) ** 2
+    q_weights = np.exp(-(qfit_top / qfit_floor) ** 2)
+    anchor_weights = brightness_weights * q_weights
+    log(f'[calibrate_psf_step] anchor weights: '
+        f'brightness range={brightness_weights.min():.3f}-'
+        f'{brightness_weights.max():.3f}, '
+        f'qfit weight range={q_weights.min():.3g}-{q_weights.max():.3g}, '
+        f'effective N=Σw={anchor_weights.sum():.2f}/{len(x_anchor)}')
 
     # Progress task: 1 kernel-fit phase + 3 fwhm-scan phases. The scan
     # portion is bulk-advanced if skip-on-stable fires.
@@ -1307,7 +1443,8 @@ def calibrate_psf_step(
             on_seed_done=_tick_seed,
             objective=objective,
             all_x=all_x_pass, all_y=all_y_pass, all_flux=all_flux_pass,
-            max_neighbors=max_neighbors, neighbor_pad=neighbor_pad)
+            max_neighbors=max_neighbors, neighbor_pad=neighbor_pad,
+            anchor_weights=anchor_weights)
     except Exception:
         if progress is not None and calib_task is not None:
             try: progress.remove_task(calib_task)

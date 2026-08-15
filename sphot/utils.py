@@ -109,8 +109,14 @@ def load_and_crop(datafile,filters,psffile=None,
         galaxy.crop_in(x0, y0, cutout_size)
         for cutoutdata in galaxy.image_list:
             cutoutdata.galaxy_size = galaxy_size
-            cutoutdata.x0_guess = cutout_size / 2
-            cutoutdata.y0_guess = cutout_size / 2
+            # Derive the centre guess from the ACTUAL frame, not the
+            # requested size: Cutout2D trims at the parent-image edge, so
+            # `cutout_size / 2` can land OFF the trimmed frame entirely
+            # (e.g. 78.3 on a 60 px frame), and any consumer that centres a
+            # mask on x0_guess then masks almost nothing.
+            ny, nx = cutoutdata.data.shape
+            cutoutdata.x0_guess = nx / 2.0
+            cutoutdata.y0_guess = ny / 2.0
     else:
         for cutoutdata in galaxy.image_list:
             cutoutdata.galaxy_size = galaxy_size

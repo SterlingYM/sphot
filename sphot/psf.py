@@ -8,6 +8,7 @@ from astropy.table import QTable, vstack
 from astropy.stats import SigmaClip, sigma_clipped_stats
 
 from photutils.aperture import EllipticalAperture
+from astropy.utils import lazyproperty
 from photutils.psf import SourceGrouper, PSFPhotometry, ImagePSF
 from photutils.detection import DAOStarFinder
 from photutils.background import (MMMBackground, MADStdBackgroundRMS,
@@ -24,6 +25,64 @@ def get_full_traceback(e):
     tb_lines = traceback.format_exception(type(e), e, e.__traceback__)
     tb_text = ''.join(tb_lines)
     return tb_text
+
+
+class _MapCoordInterpolator:
+    """Cubic-spline PSF evaluator backed by `scipy.ndimage.map_coordinates`.
+
+    Drop-in for the `RectBivariateSpline` that `ImagePSF.interpolator`
+    builds: same cubic B-spline interpolation, agreeing to ~1e-16
+    relative, but 3-7x faster for the access pattern PSF photometry
+    actually uses (a small stamp per source, evaluated over and over by
+    the LM fitter). `RectBivariateSpline.__call__(grid=False)` goes
+    through FITPACK's generic bispeu per point; `map_coordinates` is a
+    tight C loop over a pre-filtered array.
+
+    The spline pre-filter is computed ONCE here and reused with
+    `prefilter=False`; letting map_coordinates re-filter the full PSF on
+    every call would cost more than it saves.
+    """
+
+    def __init__(self, data):
+        from scipy.ndimage import spline_filter
+        self._filtered = spline_filter(
+            np.ascontiguousarray(np.asarray(data, dtype=float)),
+            order=3, mode='constant')
+
+    def __call__(self, xi, yi, grid=False):
+        from scipy.ndimage import map_coordinates
+        xi = np.asarray(xi, dtype=float)
+        yi = np.asarray(yi, dtype=float)
+        coords = np.stack([yi.ravel(), xi.ravel()], axis=0)
+        vals = map_coordinates(self._filtered, coords, order=3,
+                                mode='constant', cval=0.0, prefilter=False)
+        return vals.reshape(xi.shape)
+
+
+class FastImagePSF(ImagePSF):
+    """`ImagePSF` with the faster interpolator. photutils documents
+    `interpolator` as the intended subclass override point.
+
+    Only safe when `fill_value` is not None: photutils masks
+    out-of-bounds pixels to `fill_value` after evaluation, which hides
+    the one behavioural difference (RectBivariateSpline extrapolates
+    past the PSF edge, map_coordinates returns 0 there).
+    """
+
+    @lazyproperty
+    def interpolator(self):
+        return _MapCoordInterpolator(self.data)
+
+
+def make_image_psf(data, oversampling, fill_value=0.0, **kwargs):
+    ''' Build the PSF model used for photometry, honouring
+    `[psf].fast_psf_interpolator`. '''
+    cls = ImagePSF
+    if fill_value is not None and bool(
+            config['psf'].get('fast_psf_interpolator', True)):
+        cls = FastImagePSF
+    return cls(np.asarray(data, dtype=float), flux=1.0,
+               oversampling=oversampling, fill_value=fill_value, **kwargs)
 
 
 def _build_center_mask(shape, center_mask_params):
@@ -76,13 +135,89 @@ class PSFFitter():
         self.psf_model = self.psf_img2model(cutoutdata.psf,cutoutdata.psf_oversample)
 
     def psf_img2model(self,psfimg,psf_oversample):
-        psf_model = ImagePSF(
-            psfimg, flux=1.0,
-            x_0=0, y_0=0,
-            oversampling=psf_oversample,
-            fill_value=0.0
-            )
+        psf_model = make_image_psf(
+            psfimg, psf_oversample, fill_value=0.0, x_0=0, y_0=0)
         return psf_model
+
+    def _nnls_warm_pass(self, data, center_mask_params):
+        ''' Flux-only iPSF update between main-loop iterations.
+
+        Sources do not move between iterations -- only the Sersic model
+        (and hence `sersic_residual`, the iPSF input) changes -- so the
+        intermediate iPSF calls only exist to produce `psf_sub_data` for
+        the next Sersic fit. Skip detection entirely: freeze the positions
+        from the last full pass and re-solve ALL fluxes against the new
+        image with one global sparse NNLS (~0.5 s vs 60-100 s for a full
+        ladder + LM refit). Non-negative by construction; model/residual
+        consistent by construction. Full passes still run on the first
+        call, every `ladder_full_every`-th call, and the flagged final
+        pass, so newly-exposed sources are picked up there.
+
+        Returns (psf_table, resid) or None to fall through to the full
+        photometry path.
+        '''
+        from scipy.optimize import nnls as _scipy_nnls
+        prev = getattr(self.cutoutdata, 'psf_table', None)
+        try:
+            names = (prev.dtype.names
+                     if hasattr(prev, 'dtype') and prev.dtype.names
+                     else prev.colnames)
+            if not all(c in names for c in ('x_fit', 'y_fit', 'flux_fit')):
+                return None
+            x = np.asarray(prev['x_fit'], dtype=float)
+            y = np.asarray(prev['y_fit'], dtype=float)
+            ok = np.isfinite(x) & np.isfinite(y)
+            if ok.sum() < 3:
+                return None
+            prev = prev[ok]
+            x, y = x[ok], y[ok]
+
+            data = np.asarray(data, dtype=float)
+            # Match the full path: solve on Background2D-subtracted data.
+            # NNLS cannot compensate a positive pedestal with negative
+            # fluxes, so solving the raw image biased warm fluxes upward.
+            try:
+                data_solve, _, _ = subtract_background(data)
+            except Exception:
+                data_solve = data
+            H, W = data.shape
+            mask = _build_center_mask((H, W), center_mask_params)
+            b = data_solve.ravel().astype(np.float32)
+            invalid = ~np.isfinite(b)
+            if mask is not None:
+                invalid |= mask.ravel()
+            b = np.where(invalid, 0.0, b)
+            A = _build_design_matrix(self.psf_model, x, y, (H, W),
+                                     _psf_support_shape(self.psf_model),
+                                     invalid_flat=invalid)
+            G = _design_gram(A)
+            rhs = _design_rmatvec(A, b)
+            L = np.linalg.cholesky(G + 1e-6 * np.eye(G.shape[0]))
+            f, _ = _scipy_nnls(L.T, np.linalg.solve(L, rhs), maxiter=10000)
+            model = _design_matvec(A, f.astype(np.float32)).reshape(H, W)
+
+            nun = int((~invalid).sum())
+            rr = b - model.ravel()
+            sig = (float(np.sqrt(np.sum(rr[~invalid] ** 2)
+                                 / max(nun - len(x), 1)))
+                   if nun > len(x) + 1 else 1.0)
+            try:
+                gdiag = np.diag(np.linalg.pinv(G + 1e-6 * np.eye(G.shape[0])))
+                ferr = np.sqrt(np.maximum(gdiag, 0.0)) * sig
+            except Exception:
+                ferr = np.full(len(x), sig)
+
+            phot = prev.copy()
+            phot['flux_fit'] = f.astype(float)
+            phot['flux_err'] = ferr
+            zero = f <= 0
+            if zero.any():
+                phot = phot[~zero]
+            return phot, data - model
+        except Exception as e:
+            logger.warning(f'warm NNLS pass failed ({e}); '
+                           f'falling back to full photometry')
+            return None
 
     def fit(self,fit_to='sersic_residual',**kwargs):
         ''' Perform PSF fitting via iterative_psf_fitting (wraps
@@ -127,6 +262,52 @@ class PSFFitter():
         th_iter = config['psf'].get('th_iter',10)
         threshold_list = np.geomspace(th_min, th_max, num=th_iter)[::-1]
 
+        # Warm start. The ladder's job is to DISCOVER sources by peeling
+        # bright ones off so faint neighbours emerge. Between main-loop
+        # iterations only the Sersic model changes, so the catalogue found
+        # last iteration is still very nearly the right answer — rerunning
+        # ~8 full detection passes to rediscover it is the single biggest
+        # cost in the fit. Instead, seed the joint refit with the previous
+        # catalogue and let its own leftover-detection loop pick up what
+        # moved. `ladder_full_every` forces a full ladder every Nth call so
+        # any drift is re-anchored (0 = warm start forever after the first).
+        init_sources = None
+        n_call = int(getattr(self.cutoutdata, '_ipsf_call_count', 0))
+        warm_mode = config['psf'].get('ladder_warm_start', False)
+        # The caller flags the final photometry pass (nnls_now=True); that
+        # pass must always be a FULL ladder + refit so the saved products
+        # come from the complete pipeline.
+        force_full = bool(kwargs.get('nnls_now', False))
+        if warm_mode == 'nnls' and not force_full:
+            prev = getattr(self.cutoutdata, 'psf_table', None)
+            full_every = int(config['psf'].get('ladder_full_every', 3))
+            due_full = (n_call == 0 or
+                        (full_every > 0 and n_call % full_every == 0))
+            if prev is not None and len(prev) > 0 and not due_full:
+                out = self._nnls_warm_pass(self.data, center_mask_params)
+                if out is not None:
+                    self.cutoutdata._ipsf_call_count = n_call + 1
+                    psf_table, resid = out
+                    logger.info(f'iPSF warm NNLS pass: {len(psf_table)} '
+                                f'sources, flux-only update (ladder skipped)')
+                    return self._finalize_fit(psf_table, resid)
+        if warm_mode is True and not force_full:
+            prev = getattr(self.cutoutdata, 'psf_table', None)
+            full_every = int(config['psf'].get('ladder_full_every', 3))
+            due_full = (n_call == 0 or
+                        (full_every > 0 and n_call % full_every == 0))
+            if prev is not None and len(prev) > 0 and not due_full:
+                names = (prev.dtype.names
+                         if hasattr(prev, 'dtype') and prev.dtype.names
+                         else prev.colnames)
+                if all(c in names for c in ('x_fit', 'y_fit', 'flux_fit')):
+                    init_sources = QTable()
+                    init_sources['x'] = np.asarray(prev['x_fit'], dtype=float)
+                    init_sources['y'] = np.asarray(prev['y_fit'], dtype=float)
+                    init_sources['flux'] = np.asarray(prev['flux_fit'],
+                                                      dtype=float)
+        self.cutoutdata._ipsf_call_count = n_call + 1
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             psf_table, resid = iterative_psf_fitting(
@@ -135,6 +316,7 @@ class PSFFitter():
                 self.psf_sigma,
                 threshold_list = threshold_list,
                 center_mask_params=center_mask_params,
+                init_sources=init_sources,
                 **kwargs)
 
         if resid is None:
@@ -144,8 +326,18 @@ class PSFFitter():
             self.cutoutdata.psf_table = None
             return self.cutoutdata
 
-        psf_model_total = self.data - resid
-        psf_model_total -= np.nanmin(psf_model_total) # PSFs are forced to be positive, so minimum is always zero
+        return self._finalize_fit(psf_table, resid)
+
+    def _finalize_fit(self, psf_table, resid):
+        ''' Common tail for both the full-photometry and warm-NNLS paths:
+        build psf_model_total / psf_sub_data / residual images and store
+        everything on the cutoutdata. '''
+        # Exclude catastrophic-chi² fits from psf_model_total (psf_table
+        # itself is preserved — only the subtracted image is corrected).
+        resid = _rebuild_resid_excluding_catastrophic_chi2(
+            psf_table, resid, self.psf_model)
+
+        psf_model_total = _rebase_psf_model(self.data - resid)
         # TODO: handle the case where all pixels are filled with PSF
 
         # generate PSF-subtracted data
@@ -173,6 +365,105 @@ class PSFFitter():
         self.cutoutdata.psf_sub_data_error = psf_subtracted_data_error
         self.cutoutdata.psf_table = psf_table
         return self.cutoutdata
+
+def _rebase_psf_model(psf_model_total):
+    ''' Optionally re-zero the reconstructed PSF-model image.
+
+    `psf_model_total` is `data - resid`, i.e. a DIFFERENCE OF IMAGES -- not a
+    rendered sum of PSFs. It therefore can and does go negative (a negative
+    LM flux, or a source added back into `resid` by
+    `_rebuild_resid_excluding_catastrophic_chi2`). The legacy behaviour
+    subtracted its global minimum, on the assumption that "PSFs are positive
+    so the minimum is zero". When that assumption fails, ONE negative pixel
+    rebases the entire frame: measured on N5468/g000 F150W, a -1.05 minimum
+    put a flat +1.05 pedestal across 75% of the image (sky there is 0.34).
+    That pedestal propagates into `psf_sub_data`, forces `remove_sky` to fit
+    a NEGATIVE sky to compensate, and leaves a residual floor that the
+    positive-only Sersic can only absorb by inflating r_eff.
+
+    Modes (`[psf].psf_model_rebase`):
+      'none' -- leave the reconstruction alone (default)
+      'min'  -- legacy: subtract the global minimum (for reproducing old runs)
+    '''
+    mode = str(config['psf'].get('psf_model_rebase', 'none')).lower()
+    if mode == 'min':
+        return psf_model_total - np.nanmin(psf_model_total)
+    lo = float(np.nanmin(psf_model_total))
+    if lo < 0:
+        logger.debug(f'psf_model_total has min={lo:.4g}; left as-is '
+                     f'(psf_model_rebase={mode!r})')
+    return psf_model_total
+
+
+def _rebuild_resid_excluding_catastrophic_chi2(
+        psf_table, resid, psf_model,
+        chi2_factor=5.0, min_sources=5):
+    """Return a new `resid` image with catastrophic-chi² sources'
+    PSF-model contributions added back in, so that
+    `psf_model_total = data − resid` excludes them. **`psf_table` is
+    not modified** — downstream code (mainloop Sersic refit, sky fit,
+    calibrator) still sees the full source list as iPSF reported it.
+
+    Motivation: in crowded fields, the leftover-detection loop in
+    `_final_joint_refit` can pick up local maxima on noise / Sersic-
+    residual substructure that aren't real point sources. The pinned-
+    position joint refit then assigns those phantoms whatever flux
+    best matches at the wrong location — typically via PSF-wing
+    overlap with a real source a few pixels away. Their fitted
+    reduced_chi2 is wildly larger than well-behaved sources (e.g.
+    chi2 ~ 80–90 vs median ~3 in one observed case), and their
+    contribution to psf_model_total over-subtracts the data at the
+    wrong centre, leaving deep negative pixels in psf_sub_data.
+
+    The minimal-surface fix is to exclude only the phantoms from the
+    subtracted-image reconstruction. Removing them from `psf_table`
+    also propagates changes into Sersic / calibration state via
+    residual_masked and downstream remove_sky steps, which can bias
+    the calibrated kernel σ unintentionally.
+
+    `chi2_factor`: any row with reduced_chi2 > chi2_factor × median is
+    treated as catastrophic (capped at a minimum of 1.0 so a small
+    median doesn't over-prune).
+    `min_sources`: skip the filter if there are fewer than this many
+    rows — the median is unreliable on small N.
+    """
+    if psf_table is None or len(psf_table) < min_sources or resid is None:
+        return resid
+    if 'reduced_chi2' not in psf_table.colnames:
+        return resid
+    chi2 = np.asarray(psf_table['reduced_chi2'], dtype=float)
+    finite = np.isfinite(chi2)
+    if int(finite.sum()) < min_sources:
+        return resid
+    chi2_med = float(np.nanmedian(chi2[finite]))
+    cap = max(chi2_med * float(chi2_factor), 1.0)
+    bad = chi2 > cap
+    bad_idx = np.where(bad)[0]
+    if bad_idx.size == 0:
+        return resid
+    yy, xx = np.indices(resid.shape, dtype=float)
+    new_resid = resid.copy()
+    n_added = 0
+    for i in bad_idx:
+        f_i = float(psf_table['flux_fit'][i])
+        x_i = float(psf_table['x_fit'][i])
+        y_i = float(psf_table['y_fit'][i])
+        if not (np.isfinite(f_i) and np.isfinite(x_i) and np.isfinite(y_i)):
+            continue
+        try:
+            m_i = psf_model.evaluate(xx, yy, flux=f_i, x_0=x_i, y_0=y_i)
+        except Exception:
+            continue
+        m_i = np.where(np.isfinite(m_i), m_i, 0.0)
+        new_resid = new_resid + m_i
+        n_added += 1
+    logger.info(
+        f'PSF model: excluded {n_added} catastrophic-chi² source(s) '
+        f'(reduced_chi2 > {chi2_factor}× median {chi2_med:.2f}) '
+        f'from psf_model_total to avoid over-subtraction; '
+        f'psf_table retains them.')
+    return new_resid
+
 
 def filter_psfphot_results(phot_result,
                            center_mask_params=None,
@@ -329,19 +620,19 @@ def subtract_background(data):
     sigma = config['psf']['bkg_sigma_clip']
     box_size = config['psf']['bkg_box_size']
     filter_size = config['psf']['bkg_filter_size']
-    
+
     sigma_clip = SigmaClip(sigma=sigma)
     bkg = Background2D(data, box_size, filter_size=filter_size,
                     sigma_clip=sigma_clip, bkg_estimator=bkg_estimator)
     data_bksub = data - bkg.background
-    
+
     # the above is somehow often slightly offset from true zero.
     # this can be corrected by running MMMBackground
     data_bksub -= mmm_bkg(data_bksub)
-    
+
     bkg_std = bkgrms(data_bksub)
     data_error = np.ones_like(data_bksub) * bkg_std
-    
+
     return data_bksub,bkg_std,data_error
 
 def _resolve_fit_shape(psf_sigma):
@@ -484,6 +775,7 @@ def iterative_psf_fitting(data,psf_model,psf_sigma,
                           threshold_list,
                           progress=None,
                           progress_text='Running iPSF...',
+                          init_sources=None,
                           **kwargs):
     ''' Iteratively run do_psf_photometry() with different threshold levels.
     This function is useful for crowded fields, where a single threshold level may fail.
@@ -541,6 +833,28 @@ def iterative_psf_fitting(data,psf_model,psf_sigma,
     refit_bkg = config['psf'].get('bkg_refit_per_iteration', True)
     bkg_floor_factor = float(config['psf'].get('bkg_floor_factor', 0.3))
     initial_bkg_std = float(bkg_std)
+
+    # Warm start: skip discovery entirely and hand the previous catalogue
+    # straight to the joint refit (which re-fits every source against the
+    # current image and runs its own leftover detection for anything new).
+    if init_sources is not None and len(init_sources) > 0:
+        try:
+            new_phot, new_resid = _final_joint_refit(
+                data_bksub, data_error, bkg_std,
+                psf_model, psf_sigma, None,
+                init_override=init_sources, progress=progress,
+                **{k: v for k, v in kwargs.items() if k != 'progress'})
+        except Exception as e:
+            if config['psf']['raise_error']:
+                raise
+            logger.warning(f'warm-start refit failed: {e}; '
+                           f'falling back to the full ladder')
+            new_phot, new_resid = None, None
+        if new_phot is not None and new_resid is not None:
+            logger.info(f'iPSF warm start: {len(init_sources)} seed sources '
+                        f'-> {len(new_phot)} fitted (ladder skipped)')
+            psf_modelimg_all = data_bksub - new_resid
+            return new_phot, data.copy() - psf_modelimg_all
 
     # loop -- repeat PSF subtraction
     if progress is not None:
@@ -741,26 +1055,22 @@ def forced_psf_photometry(data, psf_model, psf_sigma, x_init, y_init,
         task = progress.add_task(
             f'{progress_text} (N={n_total})', total=2)
 
-    # 1. design matrix: cols[:, i] = unit-flux PSF rendered at (x_i, y_i).
+    # 1. design matrix: column i = unit-flux PSF rendered at (x_i, y_i).
+    # Masked / non-finite pixels are zeroed in BOTH b and the matrix rows
+    # so they contribute nothing to the normal equations.
     render_shape = tuple(config['psf']['modelimg_render_shape'])
-    cols = np.zeros((H * W, n_total), dtype=np.float32)
-    for i in range(n_total):
-        single = _render_unit_image(
-            psf_model, [x_init[i]], [y_init[i]], [1.0],
-            (H, W), render_shape)
-        cols[:, i] = single.ravel().astype(np.float32)
+    b = data_bksub.ravel().astype(np.float32)
+    masked_flat = mask_bool.ravel()
+    invalid_flat = masked_flat | ~np.isfinite(b)
+    b = np.where(invalid_flat, 0.0, b)
+    cols = _build_design_matrix(psf_model, x_init, y_init, (H, W),
+                                render_shape, invalid_flat=invalid_flat)
     if progress is not None:
         progress.update(task, advance=1, refresh=True)
 
-    # 2. NNLS solve. Mask: zero out masked pixels in BOTH b and rows
-    # of cols so they contribute nothing to the normal equations.
-    b = data_bksub.ravel().astype(np.float32)
-    masked_flat = mask_bool.ravel()
-    b = np.where(masked_flat | ~np.isfinite(b), 0.0, b)
-    if masked_flat.any():
-        cols[masked_flat, :] = 0.0
-    G = (cols.T @ cols).astype(np.float64)
-    rhs = (cols.T @ b).astype(np.float64)
+    # 2. NNLS solve.
+    G = _design_gram(cols)
+    rhs = _design_rmatvec(cols, b)
     if not (np.all(np.isfinite(G)) and np.all(np.isfinite(rhs))):
         logger.warning('forced NNLS: Gram/rhs has non-finite entries')
         if progress is not None:
@@ -774,7 +1084,7 @@ def forced_psf_photometry(data, psf_model, psf_sigma, x_init, y_init,
         flux_fit, _ = nnls(Lc.T, Linv_rhs, maxiter=10000)
     except (np.linalg.LinAlgError, RuntimeError):
         try:
-            flux_fit, _ = nnls(cols.astype(np.float64),
+            flux_fit, _ = nnls(_design_dense(cols).astype(np.float64),
                                 b.astype(np.float64), maxiter=20000)
         except Exception as e:
             logger.warning(f'forced NNLS solve failed: {e}')
@@ -785,7 +1095,7 @@ def forced_psf_photometry(data, psf_model, psf_sigma, x_init, y_init,
 
     # 3. flux uncertainties: σ_i ≈ sqrt(σ²_pix * (G⁻¹)_ii). σ_pix from
     # the residual MAD; fall back to bkg_std on degenerate Gram.
-    model_flat = (cols @ flux_fit.astype(np.float32))
+    model_flat = _design_matvec(cols, flux_fit.astype(np.float32))
     resid_flat = b - model_flat
     n_unmasked = int((~masked_flat).sum())
     if n_unmasked > n_total + 1:
@@ -840,12 +1150,8 @@ def run_forced_photometry_on_cutout(cutoutdata, x_init, y_init,
     """
     data = getattr(cutoutdata, fit_to)
     psf_sigma = float(cutoutdata.psf_sigma)
-    psf_model = ImagePSF(
-        np.asarray(cutoutdata.psf, dtype=float),
-        flux=1.0,
-        oversampling=int(cutoutdata.psf_oversample),
-        fill_value=0.0,
-    )
+    psf_model = make_image_psf(
+        cutoutdata.psf, int(cutoutdata.psf_oversample), fill_value=0.0)
 
     # Same centre-mask the iPSF path uses (in EFFECTIVE FWHM units).
     sp = getattr(cutoutdata, 'sersic_params_physical', None)
@@ -871,8 +1177,12 @@ def run_forced_photometry_on_cutout(cutoutdata, x_init, y_init,
                        'leaving cutoutdata attrs unchanged.')
         return cutoutdata
 
-    psf_model_total = data - resid
-    psf_model_total -= np.nanmin(psf_model_total)
+    # Exclude catastrophic-chi² fits from psf_model_total (phot_table
+    # itself is preserved — only the subtracted image is corrected).
+    resid = _rebuild_resid_excluding_catastrophic_chi2(
+        phot_table, resid, psf_model)
+
+    psf_model_total = _rebase_psf_model(data - resid)
 
     mask, bkg_std = sigma_clip_outside_aperture(
         resid,
@@ -898,9 +1208,43 @@ def run_forced_photometry_on_cutout(cutoutdata, x_init, y_init,
     return cutoutdata
 
 
+def _psf_support_shape(psf_model):
+    """Model footprint in DATA px: the PSF image size divided by its
+    oversampling, rounded up to odd. An ImagePSF is exactly zero outside
+    this footprint (fill_value=0), so rendering with this `model_shape`
+    reproduces photutils' own model image bit-for-bit rather than
+    truncating the wings like the smaller `modelimg_render_shape`.
+    """
+    try:
+        d = np.asarray(psf_model.data)
+        ovs = np.atleast_1d(np.asarray(psf_model.oversampling, dtype=float))
+        ny = int(np.ceil(d.shape[0] / float(ovs[0])))
+        nx = int(np.ceil(d.shape[1] / float(ovs[-1])))
+    except Exception:
+        return tuple(config['psf']['modelimg_render_shape'])
+    ny += (ny + 1) % 2
+    nx += (nx + 1) % 2
+    return (max(ny, 3), max(nx, 3))
+
+
+def _render_phot_model(psf_model, phot, shape, model_shape):
+    ''' Sum of fitted PSF models for every row of `phot`. Matches
+    `PSFPhotometry.make_residual_image`'s model to float roundoff when
+    `model_shape` is the full PSF support (see `_psf_support_shape`).
+    '''
+    x = np.asarray(phot['x_fit'], dtype=float)
+    y = np.asarray(phot['y_fit'], dtype=float)
+    f = np.asarray(phot['flux_fit'], dtype=float)
+    ok = np.isfinite(x) & np.isfinite(y) & np.isfinite(f)
+    if not ok.any():
+        return np.zeros(shape, dtype=float)
+    return _render_unit_image(psf_model, x[ok], y[ok], f[ok],
+                              shape, model_shape)
+
+
 def _final_joint_refit(data_bksub, data_error, bkg_std,
                        psf_model, psf_sigma, phot_result,
-                       progress=None, **kwargs):
+                       progress=None, init_override=None, **kwargs):
     ''' Iterative joint refit + leftover-source detection.
 
     Each iteration:
@@ -931,16 +1275,37 @@ def _final_joint_refit(data_bksub, data_error, bkg_std,
     '''
     center_mask_params = kwargs.get('center_mask_params', None)
     center_mask = _build_center_mask(data_bksub.shape, center_mask_params)
-    s_pass, _ = filter_psfphot_results(
-        phot_result, center_mask_params=center_mask_params,
-        bkg_std=bkg_std)
-    if int(s_pass.sum()) == 0:
-        return None, None
+    # The mask handed to photutils must ALSO cover non-finite pixels.
+    # Without this, any source whose fit window touches a NaN region kills
+    # the ENTIRE grouped fit ("Objective function has encountered a
+    # non-finite value"), the refit silently returns (None, None), and the
+    # raw ladder result -- unrefit, negative fluxes included -- is what
+    # gets saved as psf_table. Measured: 13 of ~16 iPSF calls on
+    # N5468/g000 died this way.
+    nonfinite = ~np.isfinite(data_bksub)
+    if nonfinite.any():
+        center_mask = (nonfinite if center_mask is None
+                       else (center_mask | nonfinite))
+    if init_override is not None:
+        # Warm start: the seed catalogue already passed quality cuts when
+        # it was built, so it is NOT re-filtered here — re-applying the
+        # cuts every iteration would compound attrition and bleed sources
+        # out of the catalogue over the main loop.
+        init = init_override
+    else:
+        s_pass, _ = filter_psfphot_results(
+            phot_result, center_mask_params=center_mask_params,
+            bkg_std=bkg_std)
+        if int(s_pass.sum()) == 0:
+            return None, None
 
-    init = QTable()
-    init['x'] = np.asarray(phot_result['x_fit'][s_pass], dtype=float)
-    init['y'] = np.asarray(phot_result['y_fit'][s_pass], dtype=float)
-    init['flux'] = np.asarray(phot_result['flux_fit'][s_pass], dtype=float)
+        init = QTable()
+        init['x'] = np.asarray(phot_result['x_fit'][s_pass], dtype=float)
+        init['y'] = np.asarray(phot_result['y_fit'][s_pass], dtype=float)
+        init['flux'] = np.asarray(phot_result['flux_fit'][s_pass],
+                                  dtype=float)
+    if len(init) == 0:
+        return None, None
 
     grouper = SourceGrouper(
         min_separation=config['psf']['grouper_separation_in_psfsigma'] * psf_sigma)
@@ -959,9 +1324,6 @@ def _final_joint_refit(data_bksub, data_error, bkg_std,
     group_warn = int(config['psf'].get(
         'final_refit_group_warning_threshold', 10000))
 
-    # photutils v3 PSFPhotometry requires xy_bounds to be strictly positive
-    # (it does not accept 0 or None as "fixed"). Substitute a tiny positive
-    # value when the user has asked for pinned positions.
     # The ladder's fit_shape scales with PSF FWHM; the joint refit can
     # afford a wider window because positions are pinned and the LM only
     # has to solve for fluxes. Falls back to the FWHM-derived ladder
@@ -969,15 +1331,37 @@ def _final_joint_refit(data_bksub, data_error, bkg_std,
     refit_fit_shape = config['psf'].get(
         'final_refit_fit_shape',
         _resolve_fit_shape(psf_sigma))
+    # Pinned positions: with xy_bounds=1e-6 (the legacy emulation of
+    # "fixed"), photutils still treats every source as a 3-parameter
+    # nonlinear problem — the grouped LM computes finite-difference
+    # Jacobians over 3N parameters per group, which is what makes
+    # mega-groups in crowded fields pathologically slow, and it flags
+    # ~every source with bit 32 ("parameter at bound") as a side
+    # effect. Genuinely fixing x_0/y_0 on the model reduces each group
+    # to an N-parameter problem that is linear in flux (LM converges
+    # in ~2 iterations) and leaves flag 32 meaningful. Same optimum,
+    # much cheaper.
+    fix_positions = (xy_bound <= 0 and bool(
+        config['psf'].get('final_refit_fix_positions', True)))
+    if fix_positions:
+        psf_model_refit = psf_model.copy()
+        psf_model_refit.x_0.fixed = True
+        psf_model_refit.y_0.fixed = True
+        xy_bounds_arg = None
+    else:
+        # photutils v3 PSFPhotometry requires xy_bounds to be strictly
+        # positive; substitute a tiny value to emulate pinning.
+        psf_model_refit = psf_model
+        xy_bounds_arg = max(xy_bound, 1e-6)
     psfphot = PSFPhotometry(
-        psf_model,
+        psf_model_refit,
         fit_shape       = refit_fit_shape,
         finder          = None,
         grouper         = grouper,
         local_bkg_estimator = localbkg,
         aperture_radius = config['psf']['PSFPhotometry_aperture_radius'],
         fitter_maxiters = config['psf']['PSFPhotometry_fitter_maxiters'],
-        xy_bounds       = max(xy_bound, 1e-6),
+        xy_bounds       = xy_bounds_arg,
         group_warning_threshold = group_warn,
     )
 
@@ -991,17 +1375,119 @@ def _final_joint_refit(data_bksub, data_error, bkg_std,
     catastrophic_factor = float(config['psf'].get(
         'final_refit_catastrophic_flux_factor', 20.0))
 
+    # Group-level memoisation across refit iterations. The grouper splits
+    # the field into independent LM subproblems; a group's fit depends only
+    # on its own member rows plus the (constant) image, error and mask. So
+    # a group whose member set is unchanged since the last iteration
+    # re-derives exactly the rows it produced before, and can be spliced in
+    # from the cache instead of re-fit. Iterations after the first usually
+    # only add a handful of leftover sources, touching a few groups —
+    # everything else is reused. This is exact, not an approximation.
+    reuse_groups = bool(config['psf'].get(
+        'final_refit_reuse_unchanged_groups', True))
+    group_cache = {}
+    prev_sig_set = [None]
+    support_shape = _psf_support_shape(psf_model)
+    n_fit_total = 0
+
+    def _grouped_fit(init_tbl):
+        ''' Returns (phot, resid, status, n_fitted). status is 'ok',
+        'nochange' (every group cached -> this iteration reproduces the
+        previous one) or 'fail'.
+        '''
+        x = np.asarray(init_tbl['x'], dtype=float)
+        y = np.asarray(init_tbl['y'], dtype=float)
+        f = np.asarray(init_tbl['flux'], dtype=float)
+        if len(x) == 0:
+            return None, None, 'fail', 0
+        gids = (np.asarray(grouper(x, y)) if len(x) > 1
+                else np.ones(1, dtype=int))
+        uniq = np.unique(gids)
+        sig = {}
+        for g in uniq:
+            m = gids == g
+            sig[int(g)] = tuple(sorted(zip(x[m].tolist(), y[m].tolist(),
+                                           f[m].tolist())))
+        # "Nothing to do" means the SOURCE SET is unchanged since the last
+        # iteration, not merely that every group is already cached: a
+        # source dropped by the catastrophic-flux filter can leave every
+        # surviving group's signature intact (it was a singleton group),
+        # and the output table must still be rebuilt without it.
+        sig_set = frozenset(sig.values())
+        if sig_set == prev_sig_set[0]:
+            return None, None, 'nochange', 0
+        prev_sig_set[0] = sig_set
+
+        stale = [int(g) for g in uniq if sig[int(g)] not in group_cache]
+        n_fit = 0
+        if stale:
+            sel = np.isin(gids, stale)
+            n_fit = int(sel.sum())
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                phot_fit = psfphot(data_bksub, error=data_error,
+                                   init_params=init_tbl[sel],
+                                   mask=center_mask)
+            if phot_fit is None or len(phot_fit) == 0:
+                return None, None, 'fail', n_fit
+
+            fx = np.asarray(phot_fit['x_init'], dtype=float)
+            fy = np.asarray(phot_fit['y_init'], dtype=float)
+            for g in stale:
+                m = gids == g
+                rows = np.zeros(len(phot_fit), dtype=bool)
+                for xi, yi in zip(x[m], y[m]):
+                    rows |= (fx == xi) & (fy == yi)
+                group_cache[sig[g]] = phot_fit[rows]
+
+        parts = [group_cache[sig[int(g)]] for g in uniq]
+        parts = [p for p in parts if p is not None and len(p) > 0]
+        if not parts:
+            return None, None, 'fail', int(sel.sum())
+        combined = parts[0] if len(parts) == 1 else vstack(parts)
+
+        # restore the caller's source ordering (photutils returns rows in
+        # init order for a full fit; per-group splices must match so the
+        # output table is identical, not merely equivalent).
+        pos_index = {}
+        for i, (xi, yi) in enumerate(zip(x, y)):
+            pos_index.setdefault((xi, yi), []).append(i)
+        order_key = []
+        for xi, yi in zip(np.asarray(combined['x_init'], dtype=float),
+                          np.asarray(combined['y_init'], dtype=float)):
+            lst = pos_index.get((xi, yi))
+            order_key.append(lst.pop(0) if lst else len(x))
+        combined = combined[np.argsort(np.asarray(order_key, dtype=int),
+                                        kind='stable')]
+        model_img = _render_phot_model(psf_model, combined,
+                                        data_bksub.shape, support_shape)
+        return combined, data_bksub - model_img, 'ok', n_fit
+
     if progress is not None:
         task = progress.add_task(
             f'final joint refit ({len(init)} sources)', total=n_iter)
 
     for it in range(n_iter):
         try:
-            with warnings.catch_warnings():
-                warnings.simplefilter('ignore')
-                new_phot = psfphot(data_bksub, error=data_error,
-                                   init_params=init, mask=center_mask)
-            new_resid = psfphot.make_residual_image(data_bksub)
+            if reuse_groups:
+                cand_phot, cand_resid, status, n_fit = _grouped_fit(init)
+                n_fit_total += n_fit
+                if status == 'nochange':
+                    logger.debug(f'joint refit iter {it}: all groups '
+                                 f'unchanged; stopping.')
+                    break
+                if status == 'fail':
+                    raise RuntimeError('grouped refit returned no photometry')
+                new_phot, new_resid = cand_phot, cand_resid
+                logger.debug(f'joint refit iter {it}: fit {n_fit}/'
+                             f'{len(init)} sources ('
+                             f'{len(init) - n_fit} reused from cache)')
+            else:
+                with warnings.catch_warnings():
+                    warnings.simplefilter('ignore')
+                    new_phot = psfphot(data_bksub, error=data_error,
+                                       init_params=init, mask=center_mask)
+                new_resid = psfphot.make_residual_image(data_bksub)
         except Exception as e:
             logger.warning(f'joint refit iter {it} failed: {e}')
             break
@@ -1035,6 +1521,10 @@ def _final_joint_refit(data_bksub, data_error, bkg_std,
             resid_mad = float(bkgrms_estimator(new_resid))
         except Exception:
             resid_mad = bkg_std
+        logger.debug(f'joint refit iter {it}: N_init={len(init)} '
+                     f'N_out={len(new_phot)} resid_MAD={resid_mad:.10g} '
+                     f'n_nonfinite_flux='
+                     f'{int((~np.isfinite(np.asarray(new_phot["flux_fit"], dtype=float))).sum())}')
 
         if progress is not None:
             progress.update(task, description=(
@@ -1106,6 +1596,127 @@ def _final_joint_refit(data_bksub, data_error, bkg_std,
 
     if new_phot is None or len(new_phot) == 0:
         return None, None
+
+    # ---- final non-negative flux solve ----
+    # Bad-source endgame. Row-dropping approaches all failed the same way:
+    # negative fluxes are a symptom of the UNCONSTRAINED flux solve (LM
+    # groups can trade +/- flux between near-degenerate columns), so
+    # removing the offending rows and re-fitting simply mints new ones
+    # (measured: gate v1 turned a -51 into a -123 and a +577/-huge pair).
+    # With positions fixed the flux problem is linear, so put the
+    # constraint IN the solver: one global sparse NNLS over the final
+    # source list. Negative fluxes become impossible, +/- compensating
+    # pairs cannot form, and the model/residual pair is consistent by
+    # construction (resid = data - A @ f from the same solve). Sources
+    # NNLS zeroes out are dropped (flux 0 contributes nothing, so no
+    # re-solve is needed); one DAO leftover round then gives any real
+    # star that was hiding under a zeroed source its own entry.
+    # 'always' = every refit call; 'final' = only when the caller flags the
+    # LAST photometry pass of the main loop (kwargs nnls_now=True) -- the
+    # pass whose psf_table/psf_sub_data get saved. Intermediate iPSF calls
+    # then keep the cheap LM fluxes (they only feed the Sersic and the
+    # calibrator), which avoids paying the NNLS + leftover cost ~11x per
+    # filter. true/false accepted for back-compat.
+    _mode = config['psf'].get('final_refit_nnls_fluxes', 'final')
+    if _mode is True:
+        _mode = 'always'
+    elif _mode is False:
+        _mode = 'never'
+    _run_nnls = (_mode == 'always'
+                 or (_mode == 'final' and bool(kwargs.get('nnls_now', False))))
+    if _run_nnls:
+        from scipy.optimize import nnls as _nnls
+
+        def _nnls_solve(phot):
+            x = np.asarray(phot['x_fit'], dtype=float)
+            y = np.asarray(phot['y_fit'], dtype=float)
+            b = data_bksub.ravel().astype(np.float32)
+            invalid = ~np.isfinite(b)
+            if center_mask is not None:
+                invalid |= center_mask.ravel()
+            b = np.where(invalid, 0.0, b)
+            A = _build_design_matrix(psf_model, x, y, data_bksub.shape,
+                                     _psf_support_shape(psf_model),
+                                     invalid_flat=invalid)
+            G = _design_gram(A)
+            rhs = _design_rmatvec(A, b)
+            L = np.linalg.cholesky(G + 1e-6 * np.eye(G.shape[0]))
+            f, _ = _nnls(L.T, np.linalg.solve(L, rhs), maxiter=10000)
+            model = _design_matvec(A, f.astype(np.float32))
+            resid = data_bksub - model.reshape(data_bksub.shape)
+            # flux errors from the Gram diagonal (same recipe as
+            # forced_psf_photometry)
+            rr = b - model
+            nun = int((~invalid).sum())
+            sig = (float(np.sqrt(np.sum(rr[~invalid] ** 2)
+                                 / max(nun - len(x), 1)))
+                   if nun > len(x) + 1 else float(bkg_std))
+            try:
+                gdiag = np.diag(np.linalg.pinv(G + 1e-6 * np.eye(G.shape[0])))
+                ferr = np.sqrt(np.maximum(gdiag, 0.0)) * sig
+            except Exception:
+                ferr = np.full(len(x), sig)
+            return f, ferr, resid
+
+        try:
+            for nnls_round in range(2):
+                flux, flux_err, resid_n = _nnls_solve(new_phot)
+                zero = flux <= 0
+                new_phot = new_phot.copy()
+                new_phot['flux_fit'] = flux
+                new_phot['flux_err'] = flux_err
+                if zero.any():
+                    logger.info(f'final NNLS fluxes: {int(zero.sum())}/'
+                                f'{len(flux)} source(s) zeroed and dropped')
+                    new_phot = new_phot[~zero]
+                new_resid = resid_n
+                if nnls_round == 1:
+                    break
+                # one leftover round on the NNLS residual
+                try:
+                    resid_mad = float(bkgrms_estimator(new_resid))
+                    finder = DAOStarFinder(threshold=detect_th * resid_mad,
+                                           fwhm=psf_sigma * 2.33,
+                                           **finder_kwargs)
+                    with warnings.catch_warnings():
+                        warnings.simplefilter('ignore')
+                        leftover = finder(new_resid, mask=center_mask)
+                except Exception:
+                    leftover = None
+                if leftover is None or len(leftover) == 0:
+                    break
+                lx = np.asarray(leftover['x_centroid'], dtype=float)
+                ly = np.asarray(leftover['y_centroid'], dtype=float)
+                ex = np.asarray(new_phot['x_fit'], dtype=float)
+                ey = np.asarray(new_phot['y_fit'], dtype=float)
+                d2 = ((lx[:, None] - ex[None, :]) ** 2
+                      + (ly[:, None] - ey[None, :]) ** 2)
+                is_new = d2.min(axis=1) > dedup_r2
+                keep_idx = []
+                for j in np.where(is_new)[0]:
+                    if all((lx[j] - lx[k]) ** 2 + (ly[j] - ly[k]) ** 2
+                           > dedup_r2 for k in keep_idx):
+                        keep_idx.append(int(j))
+                if not keep_idx:
+                    break
+                logger.info(f'final NNLS fluxes: adding {len(keep_idx)} '
+                            f'leftover source(s) and re-solving')
+                add = new_phot[:1].copy()
+                rows = []
+                for j in keep_idx:
+                    r = new_phot[:1].copy()
+                    r['x_fit'] = lx[j]; r['y_fit'] = ly[j]
+                    if 'x_init' in r.colnames:
+                        r['x_init'] = lx[j]; r['y_init'] = ly[j]
+                    r['flux_fit'] = float(leftover['flux'][j])
+                    if 'flags' in r.colnames:
+                        r['flags'] = 0
+                    rows.append(r)
+                new_phot = vstack([new_phot] + rows)
+        except Exception as e:
+            logger.warning(f'final NNLS flux solve failed: {e}; keeping '
+                           f'the LM fluxes')
+
     return new_phot, new_resid
 
 
@@ -1129,6 +1740,124 @@ def _render_unit_image(psf_model, x, y, flux, shape, render_shape):
         model_shape=tuple(render_shape),
         x_name='x_0', y_name='y_0',
     )
+
+
+def _build_design_matrix(psf_model, x, y, shape, render_shape,
+                          invalid_flat=None):
+    ''' Design matrix for the NNLS solves: column `i` is a unit-flux PSF
+    rendered at `(x[i], y[i])`, flattened.
+
+    Each column is rendered with `modelimg_render_shape`, so at most
+    `prod(render_shape)` of its `H*W` entries are nonzero — ~1% of the
+    matrix on a typical crowded cutout. Storing it densely costs
+    `H*W*N*4` bytes (141 MB for 576 sources on a 247x247 cutout) and,
+    far worse, makes the Gram product `A.T@A` cost `N^2 * H*W`
+    multiply-adds (~2e10) almost all of which multiply zeros. `G_ij` is
+    just the overlap integral of stamps i and j and is structurally zero
+    unless the two sources are within a stamp of each other, so the
+    sparse product does ~4e6 real operations instead.
+
+    Values come from the same `_render_unit_image` call the dense path
+    used, so the two agree exactly (up to summation order in the Gram).
+
+    Returns a `scipy.sparse.csc_matrix` when `[psf].sparse_nnls` is on,
+    otherwise the dense ndarray.
+    '''
+    H, W = shape
+    n = int(len(x))
+    use_sparse = bool(config['psf'].get('sparse_nnls', True))
+    if not use_sparse:
+        cols = np.zeros((H * W, n), dtype=np.float32)
+        for i in range(n):
+            single = _render_unit_image(psf_model, [x[i]], [y[i]], [1.0],
+                                        (H, W), render_shape)
+            cols[:, i] = single.ravel().astype(np.float32)
+        if invalid_flat is not None and invalid_flat.any():
+            cols[invalid_flat, :] = 0.0
+        return cols
+
+    from scipy import sparse
+    # Render each column directly on its own stamp instead of rendering a
+    # full H*W image and then hunting for the nonzeros: same values
+    # (verified bit-identical against `_render_unit_image`), ~12x faster,
+    # and it avoids allocating an H*W array per source.
+    ny, nx = int(render_shape[0]), int(render_shape[1])
+    hy, hx = ny // 2, nx // 2
+    has_invalid = invalid_flat is not None and invalid_flat.any()
+    rows_list, vals_list = [], []
+    indptr = np.zeros(n + 1, dtype=np.int64)
+    for i in range(n):
+        xi = float(x[i]); yi = float(y[i])
+        iy = int(round(yi)); ix = int(round(xi))
+        y0 = max(iy - hy, 0); y1 = min(iy - hy + ny, H)
+        x0 = max(ix - hx, 0); x1 = min(ix - hx + nx, W)
+        if y0 >= y1 or x0 >= x1 or not (np.isfinite(xi) and np.isfinite(yi)):
+            indptr[i + 1] = indptr[i]
+            continue
+        gy, gx = np.mgrid[y0:y1, x0:x1]
+        vals = psf_model.evaluate(gx.astype(float), gy.astype(float),
+                                  flux=1.0, x_0=xi, y_0=yi)
+        vals = np.where(np.isfinite(vals), vals, 0.0).ravel()
+        idx = (gy.ravel() * W + gx.ravel()).astype(np.int64)
+        if has_invalid:
+            vals = np.where(invalid_flat[idx], 0.0, vals)
+        keep = vals != 0.0
+        rows_list.append(idx[keep].astype(np.int32))
+        vals_list.append(vals[keep].astype(np.float32))
+        indptr[i + 1] = indptr[i] + int(keep.sum())
+    if n == 0:
+        return sparse.csc_matrix((H * W, 0), dtype=np.float32)
+    rows = (np.concatenate(rows_list) if rows_list
+            else np.zeros(0, dtype=np.int32))
+    vals = (np.concatenate(vals_list) if vals_list
+            else np.zeros(0, dtype=np.float32))
+    return sparse.csc_matrix((vals, rows, indptr),
+                              shape=(H * W, n), dtype=np.float32)
+
+
+def _design_gram(A):
+    ''' `A.T @ A` as a small dense float64 array (N x N).
+
+    Accumulated in float64 for the sparse path: the Gram is where the
+    dense float32 version loses precision (it sums H*W float32 products
+    per entry), and with sparsity the float64 product is cheap enough
+    that there is no reason to keep the float32 accumulation.
+    '''
+    from scipy import sparse
+    if sparse.issparse(A):
+        A64 = A.astype(np.float64)
+        return np.asarray((A64.T @ A64).toarray(), dtype=np.float64)
+    G = A.T @ A
+    return np.asarray(G, dtype=np.float64)
+
+
+def _design_rmatvec(A, b):
+    ''' `A.T @ b` as a dense float64 vector. '''
+    return np.asarray(A.T @ b).ravel().astype(np.float64)
+
+
+def _design_matvec(A, f):
+    ''' `A @ f` as a dense vector. '''
+    return np.asarray(A @ f).ravel()
+
+
+def _design_hstack(A, B):
+    ''' Append columns, preserving sparsity. '''
+    from scipy import sparse
+    if sparse.issparse(A) or sparse.issparse(B):
+        return sparse.hstack([A, B], format='csc')
+    return np.concatenate([A, B], axis=1)
+
+
+def _design_drop_last(A, k):
+    ''' Drop the last `k` columns. '''
+    return A[:, :A.shape[1] - k]
+
+
+def _design_dense(A):
+    ''' Densify for the rare direct-NNLS fallback path. '''
+    from scipy import sparse
+    return A.toarray() if sparse.issparse(A) else A
 
 
 def _local_residual_mad(residual, x, y, half=8):
@@ -1203,23 +1932,18 @@ def _final_nnls_refit(data_bksub, data_error, bkg_std,
     # 2. build NNLS design matrix (one column per source, all rendered
     #    with the same psf_model)
     H, W = data_bksub.shape
-    cols = np.zeros((H * W, n_total), dtype=np.float32)
-    for i in range(n_total):
-        single = _render_unit_image(
-            psf_model, [x_all[i]], [y_all[i]], [1.0],
-            data_bksub.shape, render_shape)
-        cols[:, i] = single.ravel().astype(np.float32)
-    if progress is not None:
-        progress.update(task, advance=1, refresh=True)
-
-    # NNLS via Gram + Cholesky (much faster than the tall M x N system)
     b = data_bksub.ravel().astype(np.float32)
     finite = np.isfinite(b)
     if (~finite).any():
         b = np.where(finite, b, 0.0)
-        cols[~finite, :] = 0.0
-    G = (cols.T @ cols).astype(np.float64)
-    rhs = (cols.T @ b).astype(np.float64)
+    cols = _build_design_matrix(psf_model, x_all, y_all, (H, W),
+                                render_shape, invalid_flat=~finite)
+    if progress is not None:
+        progress.update(task, advance=1, refresh=True)
+
+    # NNLS via Gram + Cholesky (much faster than the tall M x N system)
+    G = _design_gram(cols)
+    rhs = _design_rmatvec(cols, b)
     if not (np.all(np.isfinite(G)) and np.all(np.isfinite(rhs))):
         logger.warning('NNLS refit: Gram/rhs has non-finite entries; '
                        'aborting refit')
@@ -1232,7 +1956,7 @@ def _final_nnls_refit(data_bksub, data_error, bkg_std,
         flux_fit, _ = nnls(L.T, Linv_rhs, maxiter=10000)
     except (np.linalg.LinAlgError, RuntimeError):
         try:
-            flux_fit, _ = nnls(cols.astype(np.float64),
+            flux_fit, _ = nnls(_design_dense(cols).astype(np.float64),
                                b.astype(np.float64), maxiter=20000)
         except Exception as e:
             logger.warning(f'NNLS solve failed: {e}')
@@ -1241,7 +1965,7 @@ def _final_nnls_refit(data_bksub, data_error, bkg_std,
             return None, None
 
     # 3. build model + residual
-    model = (cols @ flux_fit.astype(np.float32)).reshape(H, W)
+    model = _design_matvec(cols, flux_fit.astype(np.float32)).reshape(H, W)
     new_resid = data_bksub - model
 
     # 4. iterative leftover detection (find_peaks on the residual +
@@ -1296,21 +2020,16 @@ def _final_nnls_refit(data_bksub, data_error, bkg_std,
             if len(lx) == 0:
                 break
             n_new = len(lx)
-            new_cols = np.zeros((H * W, n_new), dtype=np.float32)
-            for i in range(n_new):
-                single = _render_unit_image(
-                    psf_model, [lx[i]], [ly[i]], [1.0],
-                    data_bksub.shape, render_shape)
-                new_cols[:, i] = single.ravel().astype(np.float32)
-            if (~finite).any():
-                new_cols[~finite, :] = 0.0
-            cols = np.concatenate([cols, new_cols], axis=1)
-            G = (cols.T @ cols).astype(np.float64)
-            rhs = (cols.T @ b).astype(np.float64)
+            new_cols = _build_design_matrix(
+                psf_model, lx, ly, (H, W), render_shape,
+                invalid_flat=~finite)
+            cols = _design_hstack(cols, new_cols)
+            G = _design_gram(cols)
+            rhs = _design_rmatvec(cols, b)
             if not (np.all(np.isfinite(G)) and np.all(np.isfinite(rhs))):
                 logger.warning(f'leftover NNLS iter {it}: non-finite '
                                f'Gram/rhs; stopping')
-                cols = cols[:, :-n_new]
+                cols = _design_drop_last(cols, n_new)
                 break
             try:
                 L = np.linalg.cholesky(G + 1e-6 * np.eye(G.shape[0]))
@@ -1318,19 +2037,20 @@ def _final_nnls_refit(data_bksub, data_error, bkg_std,
                 flux_fit, _ = nnls(L.T, Linv_rhs, maxiter=10000)
             except (np.linalg.LinAlgError, RuntimeError):
                 try:
-                    flux_fit, _ = nnls(cols.astype(np.float64),
+                    flux_fit, _ = nnls(_design_dense(cols).astype(np.float64),
                                        b.astype(np.float64), maxiter=20000)
                 except Exception as e:
                     logger.warning(f'leftover NNLS iter {it} solve '
                                    f'failed: {e}')
-                    cols = cols[:, :-n_new]
+                    cols = _design_drop_last(cols, n_new)
                     break
             x_acc = np.concatenate([x_acc, lx])
             y_acc = np.concatenate([y_acc, ly])
             leftover_x_added = np.concatenate([leftover_x_added, lx])
             leftover_y_added = np.concatenate([leftover_y_added, ly])
             n_leftover_added += n_new
-            model = (cols @ flux_fit.astype(np.float32)).reshape(H, W)
+            model = _design_matvec(
+                cols, flux_fit.astype(np.float32)).reshape(H, W)
             new_resid = data_bksub - model
 
     if progress is not None:
